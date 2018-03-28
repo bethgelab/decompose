@@ -9,13 +9,12 @@ from copy import copy
 from decompose.distributions.distribution import DrawType, UpdateType
 from decompose.distributions.distribution import Distribution
 from decompose.distributions.uniform import Uniform
+from decompose.distributions.nnUniform import NnUniform
 from decompose.likelihoods.likelihood import Likelihood
 from decompose.likelihoods.normal2dLikelihood import Normal2dLikelihood
 from decompose.postU.postU import PostU
-from decompose.stopCriterions.stopCriterion import NoStop
 from decompose.stopCriterions.llhImprovementThreshold import LlhImprovementThreshold
 from decompose.stopCriterions.llhStall import LlhStall
-from decompose.stopCriterions.nIterations import NIterations
 
 
 class parameterProperty(object):
@@ -232,7 +231,8 @@ class TensorFactorisation(object):
             normUf = tf.norm(Uf, axis=-1)
             Uf = Uf*(norm/normUf)[..., None]
             Uf = tf.where(tf.logical_or(tf.equal(norm/normUf, 0.),
-                                        tf.logical_not(tf.is_finite(norm/normUf))), U[f], Uf)
+                                        tf.logical_not(tf.is_finite(norm/normUf))),
+                          U[f], Uf)
             U[f] = Uf
         return(U)
 
@@ -283,57 +283,31 @@ class TensorFactorisation(object):
         strId += "_" + self.likelihood.id
         return(strId)
 
-    @staticmethod
-    def getSinglePhaseEstimator(priors, K: int, dtype, phase=Phase.EM,
-                                stopCriterion=NoStop(), path: str = "/tmp"):
-
-        def model_fn(features, labels, mode):
-            # PREDICT and EVAL are not supported
-            if mode != tf.estimator.ModeKeys.TRAIN:
-                raise ValueError
-
-            # TRAIN
-            labels = list(features.keys())
-            assert len(labels) == 1
-            data = features[labels[0]]
-            dtype = data.dtype
-            dataShape = tuple(data.get_shape().as_list())
-            assert len(dataShape) == len(priors)
-            M = data.get_shape().as_list()
-
-            stopCriterion.init()
+    @classmethod
+    def __model(cls, priorTypes, M: Tuple[int, ...], K: int,
+                stopCriterion, phase, dtype, reuse=False,
+                doRescale: bool = True, transform: bool = False,
+                suffix: str = ""):
+        stopCriterion.init()
+        with tf.variable_scope("", reuse=reuse):
             likelihood = Normal2dLikelihood(M=M, K=K, dtype=dtype)
-            priorDists = [prior.random(shape=(K,),
-                                       latentShape=(M[f],),
-                                       name=f"prior{f}",
-                                       dtype=dtype)
-                          for f, prior in enumerate(priors)]
+            priors = []
+            for f, priorType in enumerate(priorTypes):
+                prior = priorType.random(shape=(K,), latentShape=(M[f],),
+                                         name=f"prior{suffix}{f}", dtype=dtype)
+                priors.append(prior)
+        tefa = cls.random(priorU=priors, likelihood=likelihood, M=M, K=K,
+                          phase=phase, stopCriterion=stopCriterion,
+                          doRescale=doRescale, dtype=dtype,
+                          transform=transform)
+        return(tefa)
 
-            tefa = TensorFactorisation.random(priorU=priorDists,
-                                              likelihood=likelihood,
-                                              M=M,
-                                              K=K,
-                                              phase=phase,
-                                              stopCriterion=stopCriterion,
-                                              dtype=dtype)
-            loss = tf.reduce_sum(tefa.residuals(data)**2)
-            updatedU = tefa.update(X=data)
-
-            with tf.control_dependencies(updatedU):
-                step = tf.train.get_or_create_global_step()
-                trainOp = tf.assign(step, step + 1)
-            return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=trainOp)
-
-        est = tf.estimator.Estimator(model_fn=model_fn,
-                                     model_dir=path)
-        return(est)
-
-    @staticmethod
-    def getEstimator(priors, K: int, dtype,
-                     stopCriterion=(LlhStall(100, ns="sc0"),
-                                    LlhImprovementThreshold(1e-2, ns="sc1")),
-                     path: str = "/tmp",
-                     device: str = "/cpu:0",
+    @classmethod
+    def getEstimator(cls, priors, K: int, dtype,
+                     stopCriterionInit=LlhStall(10, ns="scInit"),
+                     stopCriterionEM=LlhStall(100, ns="sc0"),
+                     stopCriterionBCD=LlhImprovementThreshold(1e-2, ns="sc1"),
+                     path: str = "/tmp", device: str = "/cpu:0",
                      doRescale: bool = True):
 
         def model_fn(features, labels, mode):
@@ -344,252 +318,180 @@ class TensorFactorisation(object):
 
             # TRAIN
             with tf.device(device):
-                with tf.variable_scope("stopCriterion"):
-                    stopVar = tf.get_variable("stop",
-                                              dtype=tf.bool,
-                                              initializer=False)
+                # check the input data
                 labels = list(features.keys())
                 assert len(labels) == 1
                 data = features[labels[0]]
                 dtype = data.dtype
                 dataShape = tuple(data.get_shape().as_list())
                 assert len(dataShape) == len(priors)
+
+                # shape of the data
                 M = data.get_shape().as_list()
 
+                # create global stopping variable
+                with tf.variable_scope("stopCriterion"):
+                    stopVar = tf.get_variable("stop", dtype=tf.bool,
+                                              initializer=False)
+
                 # INIT model
-                stopCriterionInit = NIterations(100, ns="scInit")
-                stopCriterionInit.init()
-                priorDistsInit = [Uniform.random(shape=(K,),
-                                                 latentShape=(M[f],),
-                                                 name=f"priorInit{f}",
-                                                 dtype=dtype)
-                                  for f, prior in enumerate(priors)]
-                likelihood = Normal2dLikelihood(M=M, K=K, dtype=dtype)
-                tefaInit = TensorFactorisation.random(priorU=priorDistsInit,
-                                                      likelihood=likelihood,
-                                                      M=M,
-                                                      K=K,
-                                                      phase=Phase.EM,
-                                                      stopCriterion=stopCriterionInit,
-                                                      doRescale=doRescale,
-                                                      dtype=dtype)
+                initPriors = []
+                for prior in priors:
+                    if prior.nonNegative:
+                        initPriors.append(NnUniform)
+                    else:
+                        initPriors.append(Uniform)
+                tefaInit = cls.__model(priorTypes=initPriors, K=K, M=M,
+                                       stopCriterion=stopCriterionInit,
+                                       dtype=dtype, reuse=False,
+                                       doRescale=doRescale, phase=Phase.EM,
+                                       suffix="init")
 
                 # EM model
-                stopCriterion[0].init()
-                with tf.variable_scope("", reuse=tf.AUTO_REUSE):
-                    likelihood = Normal2dLikelihood(M=M, K=K, dtype=dtype)
-                priorDistsEm = [prior.random(shape=(K,),
-                                             latentShape=(M[f],),
-                                             name=f"prior{f}",
-                                             dtype=dtype)
-                                for f, prior in enumerate(priors)]
-                tefaEm = TensorFactorisation.random(priorU=priorDistsEm,
-                                                    likelihood=likelihood,
-                                                    M=M,
-                                                    K=K,
-                                                    phase=Phase.EM,
-                                                    stopCriterion=stopCriterion[0],
-                                                    doRescale=doRescale,
-                                                    dtype=dtype)
+                tefaEM = cls.__model(priorTypes=priors, K=K, M=M,
+                                     stopCriterion=stopCriterionEM,
+                                     dtype=dtype, phase=Phase.EM,
+                                     reuse=tf.AUTO_REUSE,
+                                     doRescale=doRescale)
 
                 # BCD model
-                stopCriterion[1].init()
-                with tf.variable_scope("", reuse=tf.AUTO_REUSE):
-                    likelihoodBcd = Normal2dLikelihood(M=M, K=K, dtype=dtype)
-                    priorDistsBcd = [prior.random(shape=(K,),
-                                                  latentShape=(M[f],),
-                                                  name=f"prior{f}",
-                                                  dtype=dtype)
-                                     for f, prior in enumerate(priors)]
+                tefaBCD = cls.__model(priorTypes=priors, K=K, M=M,
+                                      stopCriterion=stopCriterionBCD,
+                                      dtype=dtype, phase=Phase.BCD,
+                                      reuse=tf.AUTO_REUSE,
+                                      doRescale=doRescale)
+                loss = tf.reduce_sum(tefaBCD.residuals(data)**2)
 
-                tefaBcd = TensorFactorisation.random(priorU=priorDistsBcd,
-                                                     likelihood=likelihoodBcd,
-                                                     M=M,
-                                                     K=K,
-                                                     phase=Phase.BCD,
-                                                     stopCriterion=stopCriterion[1],
-                                                     doRescale=doRescale,
-                                                     dtype=dtype)
-                loss = tf.reduce_sum(tefaEm.residuals(data)**2)
-
-                # conduct the updated depending on the stop criteria
-                updatedU = tf.cond(tf.logical_not(tefaInit.stopCriterion.stopVar),
-                                   lambda: tefaInit.update(X=data),
-                                   lambda: tf.cond(tf.logical_not(tefaEm.stopCriterion.stopVar),
-                                                   lambda: tefaEm.update(X=data),
-                                                   lambda: tefaBcd.update(X=data)))
+                # conduct an update depending on the current phase
+                stopVarInit = tefaInit.stopCriterion.stopVar
+                stopVarEm = tefaEM.stopCriterion.stopVar
+                deps = tf.cond(tf.logical_not(stopVarInit),
+                               lambda: tefaInit.update(X=data),
+                               lambda: tf.cond(tf.logical_not(stopVarEm),
+                                               lambda: tefaEM.update(X=data),
+                                               lambda: tefaBCD.update(X=data)))
 
                 # update the global stop variable
-                with tf.control_dependencies(updatedU):
-                    updatedStopVar = tf.assign(
-                        stopVar,
-                        tf.logical_and(tefaInit.stopCriterion.stopVar,
-                                       tf.logical_and(tefaEm.stopCriterion.stopVar,
-                                                      tefaBcd.stopCriterion.stopVar)))
+                stopVarBcd = tefaBCD.stopCriterion.stopVar
+                stop = tf.logical_and(stopVarInit,
+                                      tf.logical_and(stopVarEm,
+                                                     stopVarBcd))
+                with tf.control_dependencies(deps):
+                    updatedStopVar = tf.assign(stopVar, stop)
 
+                # increment global step variable
                 with tf.control_dependencies([updatedStopVar]):
                     step = tf.train.get_or_create_global_step()
                     trainOp = tf.assign(step, step + 1)
-                return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=trainOp)
+
+                return tf.estimator.EstimatorSpec(mode, loss=loss,
+                                                  train_op=trainOp)
 
         est = tf.estimator.Estimator(model_fn=model_fn,
                                      model_dir=path)
         return(est)
 
-    @staticmethod
-    def getSinglePhaseTransformEstimator(priors, K: int, dtype, chptFile: str,
-                                         phase=Phase.EM, stopCriterion=NoStop(),
-                                         path: str = "/tmp"):
-
-        reader = pywrap_tensorflow.NewCheckpointReader(chptFile)
-        varList = [v for v in reader.get_variable_to_shape_map().keys()
-                   if v != "U/0" and v != "global_step"]
-
-        ws = tf.estimator.WarmStartSettings(ckpt_to_initialize_from=chptFile,
-                                            vars_to_warm_start="|".join(varList))
-
-        def model_fn(features, labels, mode):
-            # PREDICT and EVAL are not supported
-            if mode != tf.estimator.ModeKeys.TRAIN:
-                raise ValueError
-
-            # TRAIN
-            labels = list(features.keys())
-            assert len(labels) == 1
-            data = features[labels[0]]
-            dtype = data.dtype
-            dataShape = tuple(data.get_shape().as_list())
-
-            assert len(dataShape) == len(priors)
-
-            stopCriterion.init()
-
-            M = data.get_shape().as_list()
-
-            likelihood = Normal2dLikelihood(M=M, K=K, dtype=dtype)
-            priorDists = [prior.random(shape=(K,),
-                                       latentShape=(M[f],),
-                                       name="prior{}".format(f),
-                                       dtype=dtype)
-                          for f, prior in enumerate(priors)]
-
-            tefa = TensorFactorisation.random(priorU=priorDists,
-                                              likelihood=likelihood,
-                                              M=M,
-                                              K=K,
-                                              phase=phase,
-                                              dtype=dtype,
-                                              stopCriterion=stopCriterion,
-                                              transform=True)
-            loss = tf.reduce_sum(tefa.residuals(data)**2)
-            updatedU = tefa.update(X=data)
-
-            with tf.control_dependencies(updatedU):
-                step = tf.train.get_or_create_global_step()
-                train_op_normal = tf.assign(step, step + 1)
-            return tf.estimator.EstimatorSpec(
-                mode,
-                loss=loss,
-                train_op=train_op_normal)
-
-        est = tf.estimator.Estimator(model_fn=model_fn,
-                                     model_dir=path,
-                                     warm_start_from=ws)
-
-        return(est)
-
-    @staticmethod
-    def getTransformEstimator(priors, K: int, dtype, chptFile: str,
-                              stopCriterion=(NIterations(10, ns="sc0"),
-                                             NIterations(10, ns="sc1")),
-                              path: str = "/tmp"):
-
+    @classmethod
+    def getTransformEstimator(cls, priors, K: int, dtype, chptFile: str,
+                              stopCriterionInit=LlhStall(10, ns="scInit"),
+                              stopCriterionEM=LlhStall(100, ns="sc0"),
+                              stopCriterionBCD=LlhImprovementThreshold(1e-2, ns="sc1"),
+                              path: str = "/tmp", device: str = "/cpu:0",
+                              doRescale: bool = True):
+        # configuring warm start settings
         reader = pywrap_tensorflow.NewCheckpointReader(chptFile)
         varList = [v for v in reader.get_variable_to_shape_map().keys()
                    if (v != "U/0" and
                        v != "global_step" and
                        v != "stop" and
+                       not v.startswith("scInit/") and
                        not v.startswith("sc0/") and
                        not v.startswith("sc1/"))]
-
+        wsVars = "|".join(varList)
         ws = tf.estimator.WarmStartSettings(ckpt_to_initialize_from=chptFile,
-                                            vars_to_warm_start="|".join(varList))
+                                            vars_to_warm_start=wsVars)
 
         def model_fn(features, labels, mode):
+
             # PREDICT and EVAL are not supported
             if mode != tf.estimator.ModeKeys.TRAIN:
                 raise ValueError
 
             # TRAIN
-            with tf.variable_scope("stopCriterion"):
-                stopVar = tf.get_variable("stop",
-                                          dtype=tf.bool,
-                                          initializer=False)
-            labels = list(features.keys())
-            assert len(labels) == 1
-            data = features[labels[0]]
-            dtype = data.dtype
-            dataShape = tuple(data.get_shape().as_list())
+            with tf.device(device):
+                # check the input data
+                labels = list(features.keys())
+                assert len(labels) == 1
+                data = features[labels[0]]
+                dtype = data.dtype
+                dataShape = tuple(data.get_shape().as_list())
+                assert len(dataShape) == len(priors)
 
-            assert len(dataShape) == len(priors)
+                # shape of the data
+                M = data.get_shape().as_list()
 
-            M = data.get_shape().as_list()
+                # create global stopping variable
+                with tf.variable_scope("stopCriterion"):
+                    stopVar = tf.get_variable("stop", dtype=tf.bool,
+                                              initializer=False)
 
-            # EM model
-            stopCriterion[0].init()
-            likelihoodEm = Normal2dLikelihood(M=M, K=K, dtype=dtype)
-            priorDistsEm = [prior.random(shape=(K,),
-                                         latentShape=(M[f],),
-                                         name=f"prior{f}",
-                                         dtype=dtype)
-                            for f, prior in enumerate(priors)]
-            tefaEm = TensorFactorisation.random(priorU=priorDistsEm,
-                                                likelihood=likelihoodEm,
-                                                M=M,
-                                                K=K,
-                                                phase=Phase.EM,
-                                                stopCriterion=stopCriterion[0],
-                                                dtype=dtype,
-                                                transform=True)
+                # INIT model
+                initPriors = []
+                for prior in priors:
+                    if prior.nonNegative:
+                        initPriors.append(NnUniform)
+                    else:
+                        initPriors.append(Uniform)
+                tefaInit = cls.__model(priorTypes=initPriors, K=K, M=M,
+                                       stopCriterion=stopCriterionInit,
+                                       dtype=dtype, reuse=False,
+                                       transform=True,
+                                       doRescale=doRescale, phase=Phase.EM,
+                                       suffix="init")
 
-            # BCD model
-            stopCriterion[1].init()
-            with tf.variable_scope("", reuse=tf.AUTO_REUSE):
-                likelihoodBcd = Normal2dLikelihood(M=M, K=K, dtype=dtype)
-                priorDistsBcd = [prior.random(shape=(K,),
-                                              latentShape=(M[f],),
-                                              name=f"prior{f}",
-                                              dtype=dtype)
-                                 for f, prior in enumerate(priors)]
+                # EM model
+                tefaEM = cls.__model(priorTypes=priors, K=K, M=M,
+                                     stopCriterion=stopCriterionEM,
+                                     dtype=dtype, phase=Phase.EM,
+                                     transform=True,
+                                     reuse=tf.AUTO_REUSE,
+                                     doRescale=doRescale)
 
-            tefaBcd = TensorFactorisation.random(priorU=priorDistsBcd,
-                                                 likelihood=likelihoodBcd,
-                                                 M=M,
-                                                 K=K,
-                                                 phase=Phase.BCD,
-                                                 stopCriterion=stopCriterion[1],
-                                                 dtype=dtype,
-                                                 transform=True)
-            loss = tf.reduce_sum(tefaEm.residuals(data)**2)
+                # BCD model
+                tefaBCD = cls.__model(priorTypes=priors, K=K, M=M,
+                                      stopCriterion=stopCriterionBCD,
+                                      dtype=dtype, phase=Phase.BCD,
+                                      transform=True,
+                                      reuse=tf.AUTO_REUSE,
+                                      doRescale=doRescale)
+                loss = tf.reduce_sum(tefaBCD.residuals(data)**2)
 
-            # conduct the updated depending on the stop criteria
-            updatedU = tf.cond(tf.logical_not(tefaEm.stopCriterion.stopVar),
-                               lambda: tefaEm.update(X=data),
-                               lambda: tefaBcd.update(X=data))
+                # conduct an update depending on the current phase
+                stopVarInit = tefaInit.stopCriterion.stopVar
+                stopVarEm = tefaEM.stopCriterion.stopVar
+                deps = tf.cond(tf.logical_not(stopVarInit),
+                               lambda: tefaInit.update(X=data),
+                               lambda: tf.cond(tf.logical_not(stopVarEm),
+                                               lambda: tefaEM.update(X=data),
+                                               lambda: tefaBCD.update(X=data)))
 
-            # update the global stop variable
-            with tf.control_dependencies(updatedU):
-                updatedStopVar = tf.assign(stopVar,
-                                           tf.logical_and(tefaEm.stopCriterion.stopVar,
-                                                          tefaBcd.stopCriterion.stopVar))
+                # update the global stop variable
+                stopVarBcd = tefaBCD.stopCriterion.stopVar
+                stop = tf.logical_and(stopVarInit,
+                                      tf.logical_and(stopVarEm,
+                                                     stopVarBcd))
+                with tf.control_dependencies(deps):
+                    updatedStopVar = tf.assign(stopVar, stop)
 
-            with tf.control_dependencies([updatedStopVar]):
-                step = tf.train.get_or_create_global_step()
-                trainOp = tf.assign(step, step + 1)
-            return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=trainOp)
+                # increment global step variable
+                with tf.control_dependencies([updatedStopVar]):
+                    step = tf.train.get_or_create_global_step()
+                    trainOp = tf.assign(step, step + 1)
+
+                return tf.estimator.EstimatorSpec(mode, loss=loss,
+                                                  train_op=trainOp)
 
         est = tf.estimator.Estimator(model_fn=model_fn,
                                      model_dir=path,
                                      warm_start_from=ws)
-
         return(est)
