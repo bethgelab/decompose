@@ -32,9 +32,9 @@ class ProductDict(object):
             self.data[frozenset((Normal, NnUniform))] = NormalNnUniform()
 
             # Normal times Exponential
-            # from decompose.distributions.exponential import Exponential
-            # from decompose.distributions.normalExponential import NormalExponential
-            # self.data[frozenset((Normal, Exponential))] = NormalExponential()
+            from decompose.distributions.exponential import Exponential
+            from decompose.distributions.normalExponential import NormalExponential
+            self.data[frozenset((Normal, Exponential))] = NormalExponential()
 
             # from decompose.distributions.cenLaplace import CenLaplace
             # from decompose.distributions.normalLaplace import NormalLaplace
