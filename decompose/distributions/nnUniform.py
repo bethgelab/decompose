@@ -47,7 +47,8 @@ class NnUniform(Distribution):
         self.__dummy = dummy
 
     @property
-    def nonNegative(self) -> bool:
+    @classmethod
+    def nonNegative(cls) -> bool:
         return(True)
 
     @property

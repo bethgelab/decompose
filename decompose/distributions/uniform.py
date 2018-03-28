@@ -47,7 +47,8 @@ class Uniform(Distribution):
         self.__dummy = dummy
 
     @property
-    def nonNegative(self) -> bool:
+    @classmethod
+    def nonNegative(cls) -> bool:
         return(False)
 
     @property

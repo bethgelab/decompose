@@ -58,7 +58,8 @@ class NnNormal(Distribution):
         self.__tau = tau
 
     @property
-    def nonNegative(self) -> bool:
+    @classmethod
+    def nonNegative(cls) -> bool:
         return(True)
 
     @property

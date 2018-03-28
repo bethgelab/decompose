@@ -294,8 +294,9 @@ class Distribution(metaclass=ABCMeta):
         return(self.__name)
 
     @property
+    @classmethod
     @abstractmethod
-    def nonNegative(self) -> bool:
+    def nonNegative(cls) -> bool:
         """`bool` indicating whether the distribution is non-negative."""
         ...
 
