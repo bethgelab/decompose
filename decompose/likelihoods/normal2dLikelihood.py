@@ -55,7 +55,7 @@ class Normal2dLikelihood(NormalLikelihood):
     def update(self, U: List[Tensor], X: Tensor) -> None:
         if self.noiseDistribution.updateType == UpdateType.ALL:
             residuals = self.residuals(U, X)
-            flattenedResiduals = tf.expand_dims(tf.reshape(residuals, (-1,)), 0)
+            flattenedResiduals = tf.reshape(residuals, (-1,))[..., None]
             self.noiseDistribution.update(flattenedResiduals)
 
     @property

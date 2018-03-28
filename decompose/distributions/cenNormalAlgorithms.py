@@ -33,7 +33,7 @@ class CenNormalAlgorithms(Algorithms):
     @classmethod
     def fit(cls, parameters: Dict[str, Tensor],
             data: tf.Tensor) -> Dict[str, Tensor]:
-        var = tf.reduce_mean(data**2, axis=-1)
+        var = tf.reduce_mean(data**2, axis=0)
         tau = 1./var
         updatedParameters = {"tau": tau}
         return(updatedParameters)
@@ -42,10 +42,8 @@ class CenNormalAlgorithms(Algorithms):
     def llh(cls, parameters: Dict[str, Tensor], data: tf.Tensor) -> float:
         tau = parameters["tau"]
         mu = tf.zeros_like(tau)
-
         llh = NormalAlgorithms.llh(parameters={"mu": mu, "tau": tau},
                                    data=data)
-        #llh = 1.
         return(llh)
 
     @classmethod

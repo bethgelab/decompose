@@ -18,7 +18,7 @@ class NnNormalAlgorithms(Algorithms):
         b = tf.ones_like(a)*np.inf
 
         r = rtnorm(a=a, b=b, mu=mu, sigma=sigma)
-        r = tf.expand_dims(r, axis=-1)
+        r = r[None, ...]
         return(r)
 
     @classmethod

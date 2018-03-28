@@ -353,7 +353,7 @@ class Distribution(metaclass=ABCMeta):
             a sample from the distribution or the mode of the distribution.
         """
         if self.drawType == DrawType.SAMPLE:
-            return(self.sample(1))[..., 0]
+            return(self.sample(1)[0, ...])
         else:
             return(self.mode())
 

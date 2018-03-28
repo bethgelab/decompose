@@ -34,7 +34,7 @@ class PostU(object):
         f, K = self.__f, self.__K
 
         if not t:
-            self.prior.update(data=U[f])
+            self.prior.update(data=tf.transpose(U[f]))
 
         prepVars = self.__likelihood.lhU[f].prepVars(U, X)
 
