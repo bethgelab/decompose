@@ -27,7 +27,7 @@ def test_sklearn(tmpdir):
     lrData = LowRank(rank=K, M_train=M_train, M_test=M_test)
 
     # instantiate a model
-    priors, K, dtype = [CenNormal, CenNormal], K, tf.float32
+    priors, K, dtype = [CenNormal, CenNormal], K, np.float32
     model = DECOMPOSE(modelDirectory, priors=priors, n_components=K,
                       dtype=dtype)
 
