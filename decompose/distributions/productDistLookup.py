@@ -36,12 +36,12 @@ class ProductDict(object):
             from decompose.distributions.normalExponential import NormalExponential
             self.data[frozenset((Normal, Exponential))] = NormalExponential()
 
-            # from decompose.distributions.cenLaplace import CenLaplace
-            # from decompose.distributions.normalLaplace import NormalLaplace
-            # self.data[frozenset((Normal, CenLaplace))] = NormalLaplace()
+            from decompose.distributions.cenLaplace import CenLaplace
+            from decompose.distributions.normalLaplace import NormalLaplace
+            self.data[frozenset((Normal, CenLaplace))] = NormalLaplace()
 
-            # from decompose.distributions.laplace import Laplace
-            # self.data[frozenset((Normal, Laplace))] = NormalLaplace()
+            from decompose.distributions.laplace import Laplace
+            self.data[frozenset((Normal, Laplace))] = NormalLaplace()
 
         def lookup(self, d0, d1):
             from decompose.distributions.distribution import Distribution
