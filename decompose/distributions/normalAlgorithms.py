@@ -13,7 +13,6 @@ class NormalAlgorithms(Algorithms):
         mu, tau = parameters["mu"], parameters["tau"]
         norm = tf.distributions.Normal(loc=mu, scale=1./tf.sqrt(tau))
         r = norm.sample(sample_shape=(nSamples,))
-        print("r in sample", r)
         return(r)
 
     @classmethod
