@@ -209,8 +209,14 @@ class Distribution(metaclass=ABCMeta):
             "drawType": self.drawType,
             "updateType": self.updateType,
             "persistent": False}
+
+        if key is not tuple:
+            key = (key, )
         for parameterName in self.parameterNames:
-            params[parameterName] = getattr(self, parameterName)[key]
+            attr = getattr(self, parameterName)
+            nSkipAxis = len(attr.get_shape().as_list()) - len(self.shape)
+            skipKeys = tuple([slice(None) for i in range(nSkipAxis)])
+            params[parameterName] = attr[skipKeys + key]
         i = type(self)(**params)
         return(i)
 
