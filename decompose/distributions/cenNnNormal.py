@@ -43,11 +43,3 @@ class CenNnNormal(NnNormal):
     def mu(self) -> Tensor:
         mu = tf.zeros_like(self.tau)
         return(mu)
-
-    @parameterProperty
-    def tau(self) -> Tensor:
-        return(self.__tau)
-
-    @tau.setter("tau")
-    def tau(self, tau: Tensor):
-        self.__tau = tau

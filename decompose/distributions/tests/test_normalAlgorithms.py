@@ -97,7 +97,6 @@ def test_normal_fit():
     nSamples = 100000
 
     nParameters = mu.shape[0]
-    data = np.random.random((nSamples, nParameters))
     norm = sp.stats.norm(loc=mu, scale=1./np.sqrt(tau))
     data = norm.rvs(size=(nSamples, nParameters))
     parameters = {"mu": tf.constant(np.ones(nParameters)),
