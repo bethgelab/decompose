@@ -52,11 +52,7 @@ class CenTAlgorithms(TAlgorithms):
             delta = Y**2/Psi
             w = (nu + p)/(nu + delta)
 
-            S_T_Y = tf.reduce_sum(w*Y, axis=0)
-            S_T_YY = tf.reduce_sum(w*Y**2, axis=0)
-            S_T = tf.reduce_sum(w, axis=0)
-
-            PsiNew = 1./n*(S_T_YY - S_T_Y**2/S_T)
+            PsiNew = tf.reduce_mean(w*Y**2, axis=0)
             cond = tf.logical_and(tf.is_finite(PsiNew),
                                   tf.greater(PsiNew, 1e-6))
             Psi = tf.where(cond, PsiNew, Psi*tf.ones_like(PsiNew))

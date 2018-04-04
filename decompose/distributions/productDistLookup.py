@@ -13,9 +13,9 @@ class ProductDict(object):
             self.data[frozenset((Normal, CenNormal))] = NormalNormal()
 
             # Normal times NnNormal
-            # from decompose.distributions.nnNormal import NnNormal
+            from decompose.distributions.nnNormal import NnNormal
             from decompose.distributions.normalNnNormal import NormalNnNormal
-            # self.data[frozenset((Normal, NnNormal))] = NormalNnNormal()
+            self.data[frozenset((Normal, NnNormal))] = NormalNnNormal()
 
             # Normal times CenNnNormal
             from decompose.distributions.cenNnNormal import CenNnNormal
