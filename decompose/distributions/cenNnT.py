@@ -13,7 +13,6 @@ from decompose.distributions.cenNnTAlgorithms import CenNnTAlgorithms
 
 class CenNnT(Distribution):
     def __init__(self,
-                 mu: Tensor = tf.constant([0.]),
                  Psi: Tensor = tf.constant([1.]),
                  nu: Tensor = tf.constant([1.]),
                  tau: Tensor = tf.constant([1.]),
@@ -23,11 +22,11 @@ class CenNnT(Distribution):
                  updateType: UpdateType = UpdateType.ALL,
                  persistent: bool = True) -> None:
         Distribution.__init__(self,
-                              shape=mu.shape,
+                              shape=Psi.shape,
                               latentShape=(),
                               name=name,
                               drawType=drawType,
-                              dtype=mu.dtype,
+                              dtype=Psi.dtype,
                               updateType=updateType,
                               persistent=persistent,
                               algorithms=algorithms)
