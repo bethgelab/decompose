@@ -40,12 +40,16 @@ class T(Distribution):
     def initializers(shape: Tuple[int, ...] = (1,),
                      latentShape: Tuple[int, ...] = (1000,),
                      dtype: np.dtype = np.float32) -> Dict[str, Tensor]:
+        dtype = tf.as_dtype(dtype)
+        zero = tf.constant(0., dtype=dtype)
+        one = tf.constant(1., dtype=dtype)
+        normal = tf.distributions.Normal(loc=zero, scale=one)
+        exponential = tf.distributions.Exponential(rate=one)
         initializers = {
-            "mu": tf.constant(np.random.normal(size=shape), dtype=dtype),
-            "Psi": tf.constant(np.random.exponential(size=shape), dtype=dtype),
-            "nu": tf.constant(np.random.exponential(size=shape), dtype=dtype),
-            "tau": tf.constant(np.random.exponential(size=latentShape + shape),
-                               dtype=dtype)
+            "mu": normal.sample(sample_shape=shape),
+            "Psi": exponential.sample(sample_shape=shape),
+            "nu": exponential.sample(sample_shape=shape),
+            "tau": exponential.sample(sample_shape=latentShape + shape)
         }  # type: Dict[str, Tensor]
         return(initializers)
 

@@ -38,11 +38,13 @@ class CenT(T):
     def initializers(shape: Tuple[int, ...] = (1,),
                      latentShape: Tuple[int, ...] = (1000,),
                      dtype: np.dtype = np.float32) -> Dict[str, Tensor]:
+        dtype = tf.as_dtype(dtype)
+        one = tf.constant(1., dtype=dtype)
+        exponential = tf.distributions.Exponential(rate=one)
         initializers = {
-            "Psi": tf.constant(np.random.exponential(size=shape), dtype=dtype),
-            "nu": tf.constant(np.random.exponential(size=shape), dtype=dtype),
-            "tau": tf.constant(np.random.exponential(size=latentShape + shape),
-                               dtype=dtype)
+            "Psi": exponential.sample(sample_shape=shape),
+            "nu": exponential.sample(sample_shape=shape),
+            "tau": exponential.sample(sample_shape=latentShape + shape)
         }  # type: Dict[str, Tensor]
         return(initializers)
 

@@ -38,11 +38,13 @@ class CenDoubleLomax(Distribution):
     def initializers(shape: Tuple[int, ...] = (1,),
                      latentShape: Tuple[int, ...] = (1000,),
                      dtype: np.dtype = np.float32) -> Dict[str, Tensor]:
+        dtype = tf.as_dtype(dtype)
+        one = tf.constant(1., dtype=dtype)
+        exponential = tf.distributions.Exponential(rate=one)
         initializers = {
-            "alpha": tf.constant(np.random.exponential(size=shape), dtype=dtype),
-            "beta": tf.constant(np.random.exponential(size=shape), dtype=dtype),
-            "tau": tf.constant(np.random.exponential(size=latentShape + shape),
-                               dtype=dtype)
+            "alpha": exponential.sample(sample_shape=shape),
+            "beta": exponential.sample(sample_shape=shape),
+            "tau": exponential.sample(sample_shape=latentShape + shape)
         }  # type: Dict[str, Tensor]
         return(initializers)
 

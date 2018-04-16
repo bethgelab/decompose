@@ -6,7 +6,6 @@ import numpy as np
 from decompose.distributions.distribution import DrawType, UpdateType
 from decompose.distributions.distribution import Distribution
 from decompose.distributions.nnNormal import NnNormal
-from decompose.distributions.distribution import parameterProperty
 from decompose.distributions.algorithms import Algorithms
 from decompose.distributions.cenNnNormalAlgorithms import CenNnNormalAlgorithms
 
@@ -34,8 +33,11 @@ class CenNnNormal(NnNormal):
     def initializers(shape: Tuple[int, ...] = (1,),
                      latentShape: Tuple[int, ...] = (),
                      dtype: np.dtype = np.float32) -> Dict[str, Tensor]:
+        dtype = tf.as_dtype(dtype)
+        one = tf.constant(1., dtype=dtype)
+        exponential = tf.distributions.Exponential(rate=one)
         initializers = {
-            "tau": tf.constant(np.random.exponential(size=shape), dtype=dtype)
+            "tau": exponential.sample(sample_shape=shape)
         }  # type: Dict[str, Tensor]
         return(initializers)
 

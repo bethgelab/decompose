@@ -33,8 +33,11 @@ class NnUniform(Distribution):
     def initializers(shape: Tuple[int, ...] = (1,),
                      latentShape: Tuple[int, ...] = (),
                      dtype: np.dtype = np.float32) -> Dict[str, Tensor]:
+        dtype = tf.as_dtype(dtype)
+        one = tf.constant(1., dtype=dtype)
+        exponential = tf.distributions.Exponential(rate=one)
         initializers = {
-            "dummy": tf.constant(np.random.normal(size=shape), dtype=dtype)
+            "dummy": exponential.sample(sample_shape=shape)
         }  # type: Dict[str, Tensor]
         return(initializers)
 
