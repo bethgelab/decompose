@@ -139,8 +139,12 @@ class TensorFactorisation(object):
                transform: bool = False) -> "TensorFactorisation":
 
         # initialize U
-        U = [tf.constant(np.random.normal(size=(K, M[0])), dtype=dtype),
-             tf.constant(np.random.normal(size=(K, M[1])), dtype=dtype)]
+        dtype = tf.as_dtype(dtype)
+        zero = tf.constant(0., dtype=dtype)
+        one = tf.constant(1., dtype=dtype)
+        normal = tf.distributions.Normal(loc=zero, scale=one)
+        U = [normal.sample(sample_shape=(K, M[0])),
+             normal.sample(sample_shape=(K, M[1]))]
 
         # instantiate
         tefa = TensorFactorisation(U=U,
