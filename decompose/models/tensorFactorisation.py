@@ -12,6 +12,7 @@ from decompose.distributions.uniform import Uniform
 from decompose.distributions.nnUniform import NnUniform
 from decompose.likelihoods.likelihood import Likelihood
 from decompose.likelihoods.normal2dLikelihood import Normal2dLikelihood
+from decompose.likelihoods.normalNdLikelihood import NormalNdLikelihood
 from decompose.postU.postU import PostU
 from decompose.stopCriterions.llhImprovementThreshold import LlhImprovementThreshold
 from decompose.stopCriterions.llhStall import LlhStall
@@ -143,8 +144,10 @@ class TensorFactorisation(object):
         zero = tf.constant(0., dtype=dtype)
         one = tf.constant(1., dtype=dtype)
         normal = tf.distributions.Normal(loc=zero, scale=one)
-        U = [normal.sample(sample_shape=(K, M[0])),
-             normal.sample(sample_shape=(K, M[1]))]
+        F = len(M)
+        U = []
+        for f in range(F):
+            U.append(normal.sample(sample_shape=(K, M[f])))
 
         # instantiate
         tefa = TensorFactorisation(U=U,
@@ -293,8 +296,12 @@ class TensorFactorisation(object):
                 doRescale: bool = True, transform: bool = False,
                 suffix: str = ""):
         stopCriterion.init()
+        F = len(priorTypes)
         with tf.variable_scope("", reuse=reuse):
-            likelihood = Normal2dLikelihood(M=M, K=K, dtype=dtype)
+            if F == 2:
+                likelihood = Normal2dLikelihood(M=M, K=K, dtype=dtype)  # type: Likelihood
+            else:
+                likelihood = NormalNdLikelihood(M=M, K=K, dtype=dtype)
             priors = []
             for f, priorType in enumerate(priorTypes):
                 prior = priorType.random(shape=(K,), latentShape=(M[f],),

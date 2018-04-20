@@ -1,5 +1,6 @@
-from typing import Tuple, Callable
+from typing import Tuple, Callable, List
 import numpy as np
+import string
 from numpy import ndarray
 import tensorflow as tf
 
@@ -9,39 +10,50 @@ class LowRank(object):
 
     Arguments:
         rank: `int`, rank of the data.
-        M_train: `Tuple[int, int]`, shape of the training data.
-        M_test: `Tuple[int, int]`, shape of the test data.
+        M_train: `Tuple[int, ...]`, shape of the training data.
+        M_test: `Tuple[int, ...]`, shape of the test data.
         dtype: `type`, type of the training and test data.
 
     Raises:
         ValueError:
-            if `M_train` and `M_test` differ in the second element.
+            if `M_train` and `M_test` differ in any but the first element.
     """
     def __init__(self,
                  rank: int = 3,
-                 M_train: Tuple[int, int] = (2000, 1000),
-                 M_test: Tuple[int, int] = (500, 1000),
+                 M_train: Tuple[int, ...] = (2000, 1000),
+                 M_test: Tuple[int, ...] = (500, 1000),
                  dtype: type = np.float32) -> None:
 
-        if M_train[1] != M_test[1]:
+        if M_train[1:] != M_test[1:]:
             raise ValueError
 
         U0_train = np.random.normal(size=(rank, M_train[0]))
         U0_test = np.random.normal(size=(rank, M_test[0]))
-        U1 = np.random.normal(size=(rank, M_train[1]))
-        signal_train = np.dot(U0_train.T, U1)
+        UsList = []  # type: List[np.ndarray]
+        for M in M_train[1:]:
+            UsList.append(np.random.normal(size=(rank, M)))
+        Us = tuple(UsList)
+        signal_train = self.tensorReconstruction((U0_train,) + Us)
         noise_train = np.random.normal(size=M_train, scale=0.1)
         data_train = signal_train + noise_train
-        signal_test = np.dot(U0_test.T, U1)
+        signal_test = self.tensorReconstruction((U0_test,) + Us)
         noise_test = np.random.normal(size=M_test, scale=0.1)
         data_test = signal_test + noise_test
-        self.__U1 = U1
+        self.__Us = Us
         self.__U0_train = U0_train
         self.__data_train = data_train.astype(dtype)
         self.__U0_test = U0_test
         self.__data_test = data_test.astype(dtype)
         self.__varTraining = np.var(data_train)
         self.__varTest = np.var(data_test)
+
+    def tensorReconstruction(self, U: Tuple[ndarray, ndarray]) -> ndarray:
+        """Reconstructs the data using the estimates provided"""
+        F = len(U)
+        axisIds = string.ascii_lowercase[:F]
+        subscripts = f'k{",k".join(axisIds)}->{axisIds}'
+        r = np.einsum(subscripts, *U)
+        return(r)
 
     @property
     def training(self) -> ndarray:
@@ -126,7 +138,7 @@ class LowRank(object):
             `ndarray` of shape `M_train` with the difference between the
             reconstruction and the data.
         """
-        r = np.dot(U[0].T, U[1]) - self.training
+        r = self.tensorReconstruction(U) - self.training
         return(r)
 
     def var_expl_training(self, U: Tuple[ndarray, ndarray]) -> float:
@@ -156,7 +168,7 @@ class LowRank(object):
             `ndarray` of shape `M_test` with the difference between the
             reconstruction and the data.
         """
-        r = np.dot(U[0].T, U[1]) - self.test
+        r = self.tensorReconstruction(U) - self.test
         return(r)
 
     def var_expl_test(self, U: Tuple[ndarray, ndarray]) -> float:

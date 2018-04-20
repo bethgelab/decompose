@@ -11,12 +11,12 @@ from decompose.distributions.distribution import Distribution
 class LhU(metaclass=ABCMeta):
 
     @abstractmethod
-    def prepVars(self, U: List[Tensor]) -> Tuple[Tensor, Tensor]:
+    def prepVars(self, U: List[Tensor], X: Tensor) -> Tuple[Tensor, Tensor]:
         ...
 
     @abstractmethod
     def lhUfk(self, U: List[Tensor],
-              prepVars: List[Tensor], k: Tensor) -> Distribution:
+              prepVars: Tuple[Tensor, Tensor], k: Tensor) -> Distribution:
         ...
 
     @abstractmethod

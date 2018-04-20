@@ -1,5 +1,6 @@
-from typing import Tuple
+from typing import Tuple, List
 import numpy as np
+import string
 import tensorflow as tf
 from tensorflow.python import pywrap_tensorflow
 
@@ -12,7 +13,7 @@ class DECOMPOSE(object):
     """An interface to DECMPOSE similar to sklearn.decompose."""
 
     def __init__(self, modelDirectory: str,
-                 priors: Tuple[type, type] = (CenNormal, CenNormal),
+                 priors: Tuple[type, ...] = (CenNormal, CenNormal),
                  n_components: int = 3,
                  dtype: type = np.float32,
                  maxIterations: int = 100000,
@@ -50,10 +51,17 @@ class DECOMPOSE(object):
         return(self.__variance_ratio)
 
     def __calc_variance_ratio(self, data, U):
-        varData = np.var(data.flatten())
+        varData = np.var(data)
         evr = np.zeros(self.n_components)
+        F = len(U)
+        axisIds = string.ascii_lowercase[:F]
+        subscripts = f'k{",k".join(axisIds)}->{axisIds}'
         for k in range(self.n_components):
-            evr[k] = np.var((np.outer(U[0][k], U[1][k])).flatten())/varData
+            Uks = []
+            for Uf in U:
+                Uks.append(Uf[k][None, ...])
+            recons = np.einsum(subscripts, *Uks)
+            evr[k] = np.var(recons)/varData
         return(evr)
 
     def fit(self, X: np.ndarray):
@@ -71,9 +79,13 @@ class DECOMPOSE(object):
         # store result
         ckptFile = self.__tefa.latest_checkpoint()
         ckptReader = pywrap_tensorflow.NewCheckpointReader(ckptFile)
-        U0, U1 = ckptReader.get_tensor("U/0"), ckptReader.get_tensor("U/1")
-        self.__variance_ratio = self.__calc_variance_ratio(X, (U0, U1))
-        self.__components_ = U1
+        UsList = []  # type: List[tf.Tensor]
+        for f in range(self.__n_components):
+            Uf = ckptReader.get_tensor(f"U/{f}")
+            UsList.append(Uf)
+        Us = tuple(UsList)
+        self.__variance_ratio = self.__calc_variance_ratio(X, Us)
+        self.__components_ = Us[1:]
         return(self)
 
     def fit_transform(self, X: np.ndarray):
