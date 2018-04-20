@@ -80,7 +80,8 @@ class DECOMPOSE(object):
         ckptFile = self.__tefa.latest_checkpoint()
         ckptReader = pywrap_tensorflow.NewCheckpointReader(ckptFile)
         UsList = []  # type: List[tf.Tensor]
-        for f in range(self.__n_components):
+        F = len(X.shape)
+        for f in range(F):
             Uf = ckptReader.get_tensor(f"U/{f}")
             UsList.append(Uf)
         Us = tuple(UsList)
