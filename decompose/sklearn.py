@@ -44,7 +44,11 @@ class DECOMPOSE(object):
 
     @property
     def components_(self):
-        return(self.__components_)
+        U = self.__components_
+        if len(U) == 1:
+            return(U[0])
+        else:
+            return(self.__components_)
 
     @property
     def variance_ratio_(self):
