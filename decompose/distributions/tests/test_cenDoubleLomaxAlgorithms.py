@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import scipy as sp
 import scipy.stats
@@ -6,6 +7,7 @@ import tensorflow as tf
 from decompose.distributions.cenDoubleLomaxAlgorithms import CenDoubleLomaxAlgorithms
 
 
+@pytest.mark.slow
 def test_cenDoubleLomax_sample():
     """Test whether the parameters can be recovered from many samples."""
     alpha = np.array([1., 1.5, 2.])
@@ -145,6 +147,7 @@ def test_cenDoubleLomax_llh():
     assert(np.allclose(llh, spLlh))
 
 
+@pytest.mark.slow
 def test_cenDoubleLomax_fit():
     """Test if the fitted parameters match the true parameters."""
     alpha = np.array([1., 1.5, 2.])

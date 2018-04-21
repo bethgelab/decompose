@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import scipy as sp
 import scipy.stats
@@ -6,6 +7,7 @@ import tensorflow as tf
 from decompose.distributions.lomaxAlgorithms import LomaxAlgorithms
 
 
+@pytest.mark.slow
 def test_lomax_sample():
     """Test whether the parameters can be recovered from many samples."""
     alpha = np.array([1., 1.5, 2.])
@@ -144,6 +146,7 @@ def test_lomax_llh():
     assert(np.allclose(llh, -np.inf*np.ones_like(llh)))
 
 
+@pytest.mark.slow
 def test_lomax_fit():
     """Test if the fitted parameters match the true parameters."""
     alpha = np.array([1., 1.5, 2.])

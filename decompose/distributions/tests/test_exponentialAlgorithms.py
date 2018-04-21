@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import scipy as sp
 import scipy.stats
@@ -6,6 +7,7 @@ import tensorflow as tf
 from decompose.distributions.exponentialAlgorithms import ExponentialAlgorithms
 
 
+@pytest.mark.slow
 def test_exponential_sample():
     """Test if the mean of the samples equals the scale `beta`."""
     beta = np.array([0.5, 1., 2.])
@@ -84,6 +86,7 @@ def test_exponential_llh():
     assert(np.allclose(llh, spLlh))
 
 
+@pytest.mark.slow
 def test_exponential_fit():
     """Test if the fitted parameters match the true parameters."""
     beta = np.array([0.5, 1., 2.])

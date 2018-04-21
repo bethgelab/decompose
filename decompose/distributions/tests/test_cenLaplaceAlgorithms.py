@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import scipy as sp
 import scipy.stats
@@ -6,6 +7,7 @@ import tensorflow as tf
 from decompose.distributions.cenLaplaceAlgorithms import CenLaplaceAlgorithms
 
 
+@pytest.mark.slow
 def test_cenLaplace_fit():
     """Test if the fitted parameters match the true parameters."""
     beta = np.array([0.5, 1., 2.])

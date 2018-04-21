@@ -48,7 +48,8 @@ setup(
                       'numpy',
                       'mypy'],
     extras_require={
-        'test': ['pytest'],
+        'test': ['pytest',
+                 'scipy'],
     },
 
     project_urls={

@@ -7,6 +7,8 @@ from tensorflow.python import pywrap_tensorflow
 from decompose.models.tensorFactorisation import TensorFactorisation
 from decompose.distributions.cenNormal import CenNormal
 from decompose.stopCriterions.stopCriterion import StopHook
+from decompose.stopCriterions.llhImprovementThreshold import LlhImprovementThreshold
+from decompose.stopCriterions.llhStall import LlhStall
 
 
 class DECOMPOSE(object):
@@ -18,6 +20,9 @@ class DECOMPOSE(object):
                  dtype: type = np.float32,
                  maxIterations: int = 100000,
                  doRescale: bool = True,
+                 stopCriterionInit=LlhStall(10, ns="scInit"),
+                 stopCriterionEM=LlhStall(100, ns="sc0"),
+                 stopCriterionBCD=LlhImprovementThreshold(1e-2, ns="sc1"),
                  device: str = "/cpu:0") -> None:
         self.__maxIterations = maxIterations
         self.__n_components = n_components
@@ -26,12 +31,16 @@ class DECOMPOSE(object):
         self.__modelDirectory = modelDirectory
         self.__device = device
         self.__doRescale = doRescale
-        tefa = TensorFactorisation.getEstimator(priors=priors,
-                                                K=self.n_components,
-                                                dtype=tf.as_dtype(dtype),
-                                                path=modelDirectory,
-                                                device=self.__device,
-                                                doRescale=doRescale)
+        tefa = TensorFactorisation.getEstimator(
+            priors=priors,
+            K=self.n_components,
+            dtype=tf.as_dtype(dtype),
+            path=modelDirectory,
+            doRescale=doRescale,
+            stopCriterionInit=stopCriterionInit,
+            stopCriterionEM=stopCriterionEM,
+            stopCriterionBCD=stopCriterionBCD,
+            device=self.__device)
         self.__tefa = tefa
 
     @property

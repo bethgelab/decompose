@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import scipy as sp
 import scipy.stats
@@ -6,6 +7,7 @@ import tensorflow as tf
 from decompose.distributions.laplaceAlgorithms import LaplaceAlgorithms
 
 
+@pytest.mark.slow
 def test_laplace_sample():
     """Test whether the mean and the variance of the samples are correct."""
     mu = np.array([-1, 0., 1.])
@@ -90,6 +92,7 @@ def test_laplace_llh():
     assert(np.allclose(llh, spLlh))
 
 
+@pytest.mark.slow
 def test_laplace_fit():
     """Test if the fitted parameters match the true parameters."""
     mu = np.array([-1, 0., 1.])
