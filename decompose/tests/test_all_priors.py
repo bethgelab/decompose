@@ -32,6 +32,8 @@ def PriorDistribution(request):
     return(prior)
 
 
+@pytest.mark.system
+@pytest.mark.slow
 def test_all_priors(tmpdir, PriorDistribution):
     """Tests distributions in a tensor factorisation model.
 
@@ -44,13 +46,13 @@ def test_all_priors(tmpdir, PriorDistribution):
     modelDirectory = str(tmpdir.mkdir("model"))
 
     # create a synthetic low rank dataset
-    randomData = Random(M=(1000, 2000))
+    randomData = Random(M=(100, 200))
 
     # instantiate a model
     priors, K, dtype = [PriorDistribution, PriorDistribution], 3, np.float32
-    stopCriterionInit = NIterations(100, ns="scInit")
-    stopCriterionEM = NIterations(100, ns="sc0")
-    stopCriterionBCD = NIterations(100, ns="sc1")
+    stopCriterionInit = NIterations(10, ns="scInit")
+    stopCriterionEM = NIterations(10, ns="sc0")
+    stopCriterionBCD = NIterations(10, ns="sc1")
     tefa = TensorFactorisation.getEstimator(priors=priors,
                                             K=K,
                                             stopCriterionInit=stopCriterionInit,

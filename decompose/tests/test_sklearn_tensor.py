@@ -10,6 +10,8 @@ from decompose.data.lowRank import LowRank
 tf.logging.set_verbosity(tf.logging.INFO)
 
 
+@pytest.mark.system
+@pytest.mark.slow
 def test_sklearn_tensor(tmpdir):
     """Tests the sk-learn interface of the tensor factorisation estimator.
 

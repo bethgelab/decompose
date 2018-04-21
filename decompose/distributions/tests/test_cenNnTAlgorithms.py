@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import scipy as sp
 import scipy.stats
@@ -6,6 +7,7 @@ import tensorflow as tf
 from decompose.distributions.cenNnTAlgorithms import CenNnTAlgorithms
 
 
+@pytest.mark.slow
 def test_t_sample():
     """Test whether the parameters can be recovered from many samples."""
     nu = np.array([0.5, 1., 1.5])
@@ -142,6 +144,7 @@ def test_t_llh():
     assert(np.all(llh == -np.inf*np.ones_like(llh)))
 
 
+@pytest.mark.slow
 def test_t_fit():
     """Test if the fitted parameters match the true parameters."""
     nu = np.array([0.5, 1., 1.5])
