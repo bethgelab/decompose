@@ -10,6 +10,9 @@ from decompose.distributions.productDistLookup import ProductDict
 from decompose.distributions.algorithms import Algorithms
 
 
+ParameterInfo = Dict[str, Tuple[Tuple[int, ...], bool]]
+
+
 class DrawType(Enum):
     """Type indicating the behavior of a `Distribution` 's `draw` method."""
     SAMPLE = 1
@@ -29,6 +32,40 @@ class UpdateType(Enum):
 
     ONLYLATENTS = 2
     """Indicates that the `update` method updates only the latent variables."""
+
+
+class Properties(object):
+    def __init__(self,
+                 name: str = "NA",
+                 dtype: tf.DType = tf.float32,
+                 drawType: DrawType = DrawType.SAMPLE,
+                 updateType: UpdateType = UpdateType.ALL,
+                 persistent: bool = True) -> None:
+        self.__name = name
+        self.__dtype = dtype
+        self.__drawType = drawType
+        self.__updateType = updateType
+        self.__persistent = persistent
+
+    @property
+    def name(self):
+        return(self.__name)
+
+    @property
+    def dtype(self):
+        return(self.__dtype)
+
+    @property
+    def drawType(self):
+        return(self.__drawType)
+
+    @property
+    def updateType(self):
+        return(self.__updateType)
+
+    @property
+    def persistent(self):
+        return(self.__persistent)
 
 
 class Distribution(metaclass=ABCMeta):
@@ -54,25 +91,21 @@ class Distribution(metaclass=ABCMeta):
         persistent: `bool` whether or not to store parameters in variables.
     """
     def __init__(self,
-                 name: str,
-                 shape: Tuple[int, ...],
-                 latentShape: Tuple[int, ...],
                  algorithms: Type[Algorithms],
-                 dtype: type = tf.float64,
-                 drawType: DrawType = DrawType.SAMPLE,
-                 updateType: UpdateType = UpdateType.ALL,
-                 persistent: bool = True) -> None:
+                 parameters: Dict[str, Tensor],
+                 properties: Properties,
+                 hyperParameters: Tuple[str] = ()) -> None:
+        self.__algorithms = algorithms
+        self.__hyperParameters = hyperParameters
+        if properties is not None:
+            self.__name = properties.name
+            self.__dtype = properties.dtype
+            self.__drawType = properties.drawType
+            self.__updateType = properties.updateType
+            self.__persistent = properties.persistent
+            self.__init(parameters=parameters)
 
-        self.__name = name
-        self.__shape = shape
-        self.__latentShape = latentShape
-        self.__dtype = dtype
-        self.__drawType = drawType
-        self.__updateType = updateType
-        self.__persistent = persistent
-        self.algorithms = algorithms
-
-    def _init(self, parameters: Dict[str, Tensor]) -> None:
+    def __init(self, parameters: Dict[str, Tensor]) -> None:
         """Initializes the parameters and variables of the distribution.
 
         How the parameters are initizliaed depends on whether or not
@@ -113,17 +146,15 @@ class Distribution(metaclass=ABCMeta):
                 raise ValueError
             setattr(self, parameterName, parameters[parameterName])
 
-    @classmethod
-    def random(cls,
-               name: str,
-               shape: Tuple[int, ...],
-               latentShape: Tuple[int, ...],
-               dtype: type = tf.float64,
-               homogenous: bool = False,
+    def random(self,
+               shape: Tuple[int, ...] = (1,),
+               latentShape: Tuple[int, ...] = (),
+               name: str = "NA",
+               dtype: type = tf.float32,
                drawType: DrawType = DrawType.SAMPLE,
                updateType: UpdateType = UpdateType.ALL,
                persistent: bool = True) -> "Distribution":
-        """Static method to create randomly initialized distributions.
+        """Creates randomly initialized distributions.
 
         Arguments:
             name: `str` the name of the instance of a distribution.
@@ -136,18 +167,31 @@ class Distribution(metaclass=ABCMeta):
         Returns:
             `Distribution` object with randomly initialized parameters.
         """
-        params = {
-            "name": name,
-            "drawType": drawType,
-            "updateType": updateType,
-            "persistent": persistent}
+        algorithms = self.algorithms
+        properties = Properties(name=name,
+                                dtype=dtype,
+                                drawType=drawType,
+                                updateType=updateType,
+                                persistent=persistent)
+        parameters = {}
+        parameterInfo = self.parameterInfo(shape=shape,
+                                           latentShape=latentShape)
+        dtype = tf.as_dtype(dtype)
+        one = tf.constant(1., dtype=dtype)
+        zero = tf.constant(0., dtype=dtype)
+        for parameterName, (shape, nonNeg) in parameterInfo.items():
+            if nonNeg:
+                exponential = tf.distributions.Exponential(rate=one)
+                rand = exponential.sample(sample_shape=shape)
+            else:
+                normal = tf.distributions.Normal(loc=zero, scale=one)
+                rand = normal.sample(sample_shape=shape)
+            parameters[parameterName] = rand
 
-        initializers = cls.initializers(shape=shape, latentShape=latentShape,
-                                        dtype=dtype)
-        for parameter, initTensor in initializers.items():
-            params[parameter] = initTensor
-        distInstance = cls(**params)
-        return(distInstance)
+        instance = type(self)(algorithms=algorithms,
+                              properties=properties,
+                              **parameters)
+        return(instance)
 
     def __mul__(self, other: object) -> "Distribution":
         """Multiplies the densities of two distibutions.
@@ -204,12 +248,12 @@ class Distribution(metaclass=ABCMeta):
         Returns: `Distribution` of same type but only a subset of the original
             elements.
         """
-        params = {
-            "name": self.name,
-            "drawType": self.drawType,
-            "updateType": self.updateType,
-            "persistent": False}
-
+        algorithms = self.algorithms
+        properties = Properties(name=self.name,
+                                drawType=self.drawType,
+                                updateType=self.updateType,
+                                persistent=False)
+        params = {}
         if key is not tuple:
             key = (key, )
         for parameterName in self.parameterNames:
@@ -217,14 +261,15 @@ class Distribution(metaclass=ABCMeta):
             nSkipAxis = len(attr.get_shape().as_list()) - len(self.shape)
             skipKeys = tuple([slice(None) for i in range(nSkipAxis)])
             params[parameterName] = attr[skipKeys + key]
-        i = type(self)(**params)
+        i = type(self)(algorithms=algorithms,
+                       properties=properties,
+                       **params)
         return(i)
 
-    @staticmethod
     @abstractmethod
-    def initializers(shape: Tuple[int, ...] = (1,),
-                     latentShape: Tuple[int, ...] = (),
-                     dtype: DType = tf.float32) -> Dict[str, Tensor]:
+    def parameterInfo(self,
+                      shape: Tuple[int, ...] = (1,),
+                      latentShape: Tuple[int, ...] = ()) -> ParameterInfo:
         """Initializers of the parameters of the distribution.
 
         Draw random initialization values for each parameter matching the
@@ -275,19 +320,25 @@ class Distribution(metaclass=ABCMeta):
         return(self.__persistent)
 
     @property
+    def algorithms(self) -> Type[Algorithms]:
+        return(self.__algorithms)
+
+    @property
     def parameterNames(self) -> Tuple[str, ...]:
         """`Tuple[str, ...]` parameter names of the distribution."""
-        return(tuple(self.initializers().keys()))
+        return(tuple(self.parameterInfo().keys()))
 
     @property
+    @abstractmethod
     def shape(self) -> Tuple[int, ...]:
         """`Tuple[int, ...]` the shape of the distribution."""
-        return(tuple(self.__shape.as_list()))
+        ...
 
     @property
+    @abstractmethod
     def latentShape(self) -> Tuple[int, ...]:
         """`Tuple[int, ...]` the latent shape of the distribution."""
-        return(self.__latentShape)
+        ...
 
     @property
     def dtype(self) -> DType:
@@ -300,9 +351,8 @@ class Distribution(metaclass=ABCMeta):
         return(self.__name)
 
     @property
-    @classmethod
     @abstractmethod
-    def nonNegative(cls) -> bool:
+    def nonNegative(self) -> bool:
         """`bool` indicating whether the distribution is non-negative."""
         ...
 

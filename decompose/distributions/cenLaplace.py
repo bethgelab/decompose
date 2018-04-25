@@ -3,42 +3,30 @@ import tensorflow as tf
 from tensorflow import Tensor
 import numpy as np
 
-from decompose.distributions.distribution import DrawType, UpdateType
 from decompose.distributions.distribution import Distribution
+from decompose.distributions.distribution import ParameterInfo
 from decompose.distributions.laplace import Laplace
-from decompose.distributions.distribution import parameterProperty
 from decompose.distributions.algorithms import Algorithms
 from decompose.distributions.cenLaplaceAlgorithms import CenLaplaceAlgorithms
+from decompose.distributions.distribution import Properties
 
 
 class CenLaplace(Laplace):
     def __init__(self,
-                 beta: Tensor = tf.constant([1.]),
-                 name: str = "NA",
                  algorithms: Type[Algorithms] = CenLaplaceAlgorithms,
-                 drawType: DrawType = DrawType.SAMPLE,
-                 updateType: UpdateType = UpdateType.ALL,
-                 persistent: bool = True) -> None:
+                 beta: Tensor = None,
+                 properties: Properties = None) -> None:
+        parameters = {"beta": beta}
         Distribution.__init__(self,
-                              shape=beta.shape,
-                              latentShape=(),
-                              name=name,
                               algorithms=algorithms,
-                              drawType=drawType,
-                              dtype=beta.dtype,
-                              updateType=updateType,
-                              persistent=persistent)
-        self._init({"beta": beta})
+                              parameters=parameters,
+                              properties=properties)
 
-    @staticmethod
-    def initializers(shape: Tuple[int, ...] = (1,),
-                     latentShape: Tuple[int, ...] = (),
-                     dtype: np.dtype = np.float32) -> Dict[str, Tensor]:
-        dtype = tf.as_dtype(dtype)
-        one = tf.constant(1., dtype=dtype)
-        exponential = tf.distributions.Exponential(rate=one)
+    def parameterInfo(self,
+                      shape: Tuple[int, ...] = (1,),
+                      latentShape: Tuple[int, ...] = ()) -> ParameterInfo:
         initializers = {
-            "beta": exponential.sample(sample_shape=shape)
+            "beta": (shape, True)
         }  # type: Dict[str, Tensor]
         return(initializers)
 
@@ -46,11 +34,3 @@ class CenLaplace(Laplace):
     def mu(self) -> Tensor:
         mu = tf.zeros_like(self.beta)
         return(mu)
-
-    @parameterProperty
-    def beta(self) -> Tensor:
-        return(self.__beta)
-
-    @beta.setter("beta")
-    def beta(self, beta: Tensor) -> None:
-        self.__beta = beta

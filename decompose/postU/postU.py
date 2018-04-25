@@ -1,6 +1,5 @@
 from typing import Tuple, List
 import numpy as np
-from numpy import ndarray
 from tensorflow import Tensor
 import tensorflow as tf
 
@@ -16,7 +15,7 @@ class PostU(object):
         self.__likelihood = likelihood
         self.__prior = prior
         self.__f = f
-        self.__K = prior.shape[0]
+        self.__K = likelihood.K
         self.__normalize = normalize
 
     def f(self) -> int:

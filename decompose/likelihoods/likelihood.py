@@ -40,17 +40,6 @@ class Likelihood(metaclass=ABCMeta):
     def lhU(self) -> List["LhU"]:
         ...
 
-    @staticmethod
-    @abstractmethod
-    def initializers(K: int = 1, M: Tuple[int, ...] = (10, 10),
-                     dtype=np.float32) -> Dict[str, tf.Tensor]:
-        ...
-
-    @staticmethod
-    @abstractmethod
-    def type():
-        ...
-
     @property
     @abstractmethod
     def noiseDistribution(self) -> Distribution:
@@ -58,6 +47,10 @@ class Likelihood(metaclass=ABCMeta):
 
     @abstractmethod
     def residuals(self, U: List[Tensor], X: Tensor) -> tf.Tensor:
+        ...
+
+    @abstractmethod
+    def init(self) -> None:
         ...
 
     @property

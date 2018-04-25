@@ -302,6 +302,7 @@ class TensorFactorisation(object):
                 likelihood = Normal2dLikelihood(M=M, K=K, dtype=dtype)  # type: Likelihood
             else:
                 likelihood = NormalNdLikelihood(M=M, K=K, dtype=dtype)
+            likelihood.init()
             priors = []
             for f, priorType in enumerate(priorTypes):
                 prior = priorType.random(shape=(K,), latentShape=(M[f],),
@@ -349,9 +350,9 @@ class TensorFactorisation(object):
                 initPriors = []
                 for prior in priors:
                     if prior.nonNegative:
-                        initPriors.append(NnUniform)
+                        initPriors.append(NnUniform())
                     else:
-                        initPriors.append(Uniform)
+                        initPriors.append(Uniform())
                 tefaInit = cls.__model(priorTypes=initPriors, K=K, M=M,
                                        stopCriterion=stopCriterionInit,
                                        dtype=dtype, reuse=False,
@@ -450,9 +451,9 @@ class TensorFactorisation(object):
                 initPriors = []
                 for prior in priors:
                     if prior.nonNegative:
-                        initPriors.append(NnUniform)
+                        initPriors.append(NnUniform())
                     else:
-                        initPriors.append(Uniform)
+                        initPriors.append(Uniform())
                 tefaInit = cls.__model(priorTypes=initPriors, K=K, M=M,
                                        stopCriterion=stopCriterionInit,
                                        dtype=dtype, reuse=False,

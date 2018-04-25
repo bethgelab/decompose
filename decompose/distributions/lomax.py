@@ -3,48 +3,35 @@ import tensorflow as tf
 from tensorflow import Tensor
 import numpy as np
 
-from decompose.distributions.distribution import DrawType, UpdateType
+from decompose.distributions.distribution import ParameterInfo
 from decompose.distributions.distribution import Distribution
 from decompose.distributions.exponential import Exponential
 from decompose.distributions.distribution import parameterProperty
 from decompose.distributions.algorithms import Algorithms
 from decompose.distributions.lomaxAlgorithms import LomaxAlgorithms
+from decompose.distributions.distribution import Properties
 
 
 class Lomax(Distribution):
     def __init__(self,
-                 alpha: Tensor = tf.constant([1.]),
-                 beta: Tensor = tf.constant([1.]),
-                 tau: Tensor = tf.constant([1.]),
-                 name: str = "NA",
                  algorithms: Type[Algorithms] = LomaxAlgorithms,
-                 drawType: DrawType = DrawType.SAMPLE,
-                 updateType: UpdateType = UpdateType.ALL,
-                 persistent: bool = True) -> None:
+                 alpha: Tensor = None,
+                 beta: Tensor = None,
+                 tau: Tensor = None,
+                 properties: Properties = None) -> None:
+        parameters = {"alpha": alpha, "beta": beta, "tau": tau}
         Distribution.__init__(self,
-                              shape=alpha.shape,
-                              latentShape=(),
-                              name=name,
-                              drawType=drawType,
-                              dtype=alpha.dtype,
-                              updateType=updateType,
-                              persistent=persistent,
-                              algorithms=algorithms)
-        self._init({"alpha": alpha,
-                    "beta": beta,
-                    "tau": tau})
+                              algorithms=algorithms,
+                              parameters=parameters,
+                              properties=properties)
 
-    @staticmethod
-    def initializers(shape: Tuple[int, ...] = (1,),
-                     latentShape: Tuple[int, ...] = (1000,),
-                     dtype: np.dtype = np.float32) -> Dict[str, Tensor]:
-        dtype = tf.as_dtype(dtype)
-        one = tf.constant(1., dtype=dtype)
-        exponential = tf.distributions.Exponential(rate=one)
+    def parameterInfo(self,
+                      shape: Tuple[int, ...] = (1,),
+                      latentShape: Tuple[int, ...] = ()) -> ParameterInfo:
         initializers = {
-            "alpha": exponential.sample(sample_shape=shape),
-            "beta": exponential.sample(sample_shape=shape),
-            "tau": exponential.sample(sample_shape=latentShape + shape)
+            "alpha": (shape, True),
+            "beta": (shape, True),
+            "tau": (latentShape + shape, True)
         }  # type: Dict[str, Tensor]
         return(initializers)
 
@@ -78,8 +65,7 @@ class Lomax(Distribution):
         self.__tau = tau
 
     @property
-    @classmethod
-    def nonNegative(cls) -> bool:
+    def nonNegative(self) -> bool:
         return(True)
 
     @property
@@ -89,9 +75,19 @@ class Lomax(Distribution):
     def cond(self) -> Exponential:
         tau = self.tau
         name = self.name + "Cond"
+        properties = Properties(name=name,
+                                drawType=self.drawType,
+                                updateType=self.updateType,
+                                persistent=False)
         cond = Exponential(beta=1./tau,
-                           name=name,
-                           drawType=self.drawType,
-                           updateType=self.updateType,
-                           persistent=False)
+                           properties=properties)
         return(cond)
+
+    @property
+    def shape(self) -> Tuple[int, ...]:
+        return(tuple(self.mu.get_shape().as_list()))
+
+    @property
+    def latentShape(self) -> Tuple[int, ...]:
+        ndims = len(self.tau.get_shape().as_list()) - len(self.shape)
+        return(tuple(self.tau.get_shape().as_list()[:ndims]))

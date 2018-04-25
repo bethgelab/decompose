@@ -3,43 +3,40 @@ import tensorflow as tf
 from tensorflow import Tensor
 import numpy as np
 
-from decompose.distributions.distribution import DrawType, UpdateType
 from decompose.distributions.distribution import Distribution
+from decompose.distributions.distribution import ParameterInfo
 from decompose.distributions.distribution import parameterProperty
 from decompose.distributions.algorithms import Algorithms
 from decompose.distributions.uniformAlgorithms import UniformAlgorithms
+from decompose.distributions.distribution import Properties
 
 
 class Uniform(Distribution):
     def __init__(self,
-                 dummy: Tensor = tf.constant([0.]),
-                 name: str = "NA",
                  algorithms: Type[Algorithms] = UniformAlgorithms,
-                 drawType: DrawType = DrawType.SAMPLE,
-                 updateType: UpdateType = UpdateType.ALL,
-                 persistent: bool = True) -> None:
+                 dummy: Tensor = None,
+                 properties: Properties = None) -> None:
+        parameters = {"dummy": dummy}
         Distribution.__init__(self,
-                              shape=dummy.shape,
-                              latentShape=(),
-                              name=name,
-                              drawType=drawType,
-                              dtype=dummy.dtype,
-                              updateType=updateType,
-                              persistent=persistent,
-                              algorithms=algorithms)
-        self._init({"dummy": dummy})
+                              algorithms=algorithms,
+                              parameters=parameters,
+                              properties=properties)
 
-    @staticmethod
-    def initializers(shape: Tuple[int, ...] = (1,),
-                     latentShape: Tuple[int, ...] = (),
-                     dtype: np.dtype = np.float32) -> Dict[str, Tensor]:
-        dtype = tf.as_dtype(dtype)
-        one = tf.constant(1., dtype=dtype)
-        exponential = tf.distributions.Exponential(rate=one)
+    def parameterInfo(self,
+                      shape: Tuple[int, ...] = (1,),
+                      latentShape: Tuple[int, ...] = ()) -> ParameterInfo:
         initializers = {
-            "dummy": exponential.sample(sample_shape=shape)
+            "dummy": (shape, False)
         }  # type: Dict[str, Tensor]
         return(initializers)
+
+    @property
+    def shape(self) -> Tuple[int, ...]:
+        return(tuple(self.dummy.get_shape().as_list()))
+
+    @property
+    def latentShape(self) -> Tuple[int, ...]:
+        return(())
 
     @parameterProperty
     def dummy(self) -> Tensor:
@@ -50,8 +47,7 @@ class Uniform(Distribution):
         self.__dummy = dummy
 
     @property
-    @classmethod
-    def nonNegative(cls) -> bool:
+    def nonNegative(self) -> bool:
         return(False)
 
     @property

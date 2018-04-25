@@ -1,48 +1,33 @@
 from typing import Tuple, Dict, Type
 import tensorflow as tf
 from tensorflow import Tensor
-import numpy as np
 
-from decompose.distributions.distribution import DrawType, UpdateType
 from decompose.distributions.distribution import Distribution
+from decompose.distributions.distribution import ParameterInfo
 from decompose.distributions.distribution import parameterProperty
 from decompose.distributions.algorithms import Algorithms
 from decompose.distributions.normalAlgorithms import NormalAlgorithms
+from decompose.distributions.distribution import Properties
 
 
 class Normal(Distribution):
     def __init__(self,
-                 mu: Tensor = tf.constant([0.]),
-                 tau: Tensor = tf.constant([1.]),
-                 name: str = "NA",
                  algorithms: Type[Algorithms] = NormalAlgorithms,
-                 drawType: DrawType = DrawType.SAMPLE,
-                 updateType: UpdateType = UpdateType.ALL,
-                 persistent: bool = True) -> None:
+                 mu: Tensor = None,
+                 tau: Tensor = None,
+                 properties: Properties = None) -> None:
+        parameters = {"mu": mu, "tau": tau}
         Distribution.__init__(self,
-                              shape=mu.shape,
-                              latentShape=(),
-                              name=name,
-                              drawType=drawType,
-                              dtype=mu.dtype,
-                              updateType=updateType,
-                              persistent=persistent,
-                              algorithms=algorithms)
-        self._init({"mu": mu,
-                    "tau": tau})
+                              algorithms=algorithms,
+                              parameters=parameters,
+                              properties=properties)
 
-    @staticmethod
-    def initializers(shape: Tuple[int, ...] = (1,),
-                     latentShape: Tuple[int, ...] = (),
-                     dtype: np.dtype = np.float32) -> Dict[str, Tensor]:
-        dtype = tf.as_dtype(dtype)
-        zero = tf.constant(0., dtype=dtype)
-        one = tf.constant(1., dtype=dtype)
-        normal = tf.distributions.Normal(loc=zero, scale=one)
-        exponential = tf.distributions.Exponential(rate=one)
+    def parameterInfo(self,
+                      shape: Tuple[int, ...] = (1,),
+                      latentShape: Tuple[int, ...] = ())-> ParameterInfo:
         initializers = {
-            "mu": normal.sample(sample_shape=shape),
-            "tau": exponential.sample(sample_shape=shape)
+            "mu": (shape, False),
+            "tau": (shape, True)
         }  # type: Dict[str, Tensor]
         return(initializers)
 
@@ -63,8 +48,7 @@ class Normal(Distribution):
         self.__tau = tau
 
     @property
-    @classmethod
-    def nonNegative(cls) -> bool:
+    def nonNegative(self) -> bool:
         return(False)
 
     @property
@@ -73,3 +57,11 @@ class Normal(Distribution):
 
     def cond(self) -> Distribution:
         return(self)
+
+    @property
+    def shape(self) -> Tuple[int, ...]:
+        return(tuple(self.mu.get_shape().as_list()))
+
+    @property
+    def latentShape(self) -> Tuple[int, ...]:
+        return(())

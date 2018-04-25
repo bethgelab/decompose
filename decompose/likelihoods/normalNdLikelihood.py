@@ -9,6 +9,7 @@ from decompose.distributions.distribution import DrawType, UpdateType
 from decompose.distributions.cenNormal import CenNormal
 from decompose.distributions.normal import Normal
 from decompose.likelihoods.likelihood import NormalLikelihood, LhU
+from decompose.distributions.distribution import Properties
 
 
 class NormalNdLikelihood(NormalLikelihood):
@@ -18,29 +19,25 @@ class NormalNdLikelihood(NormalLikelihood):
                  updateType: UpdateType = UpdateType.ALL,
                  dtype=tf.float32) -> None:
         NormalLikelihood.__init__(self, M, K)
-
-        noiseDistribution = CenNormal(tau=tf.constant([tau], dtype=dtype),
-                                      name='likelihood',
-                                      drawType=drawType,
-                                      updateType=updateType,
-                                      persistent=True)
-        self.__noiseDistribution = noiseDistribution
+        self.__tauInit = tau
+        self.__dtype = dtype
+        self.__properties = Properties(name='likelihood',
+                                       drawType=drawType,
+                                       updateType=updateType,
+                                       persistent=True)
 
         self.__lhU = []  # type: List[LhU]
         for f in range(self.F):
             lhUf = NormalNdLikelihoodLhU(f, self)
             self.__lhU.append(lhUf)
 
-    @staticmethod
-    def type():
-        return(NormalNdLikelihood)
-
-    @staticmethod
-    def initializers(K: int = 1, M: Tuple[int, ...] = (10, 10),
-                     dtype=np.float32) -> Dict[str, Tuple[Any]]:
-        initializers = {
-        }  # type: Dict[str, Tuple[tf.Tensor]]
-        return(initializers)
+    def init(self) -> None:
+        tau = self.__tauInit
+        dtype = self.__dtype
+        properties = self.__properties
+        noiseDistribution = CenNormal(tau=tf.constant([tau], dtype=dtype),
+                                      properties=properties)
+        self.__noiseDistribution = noiseDistribution
 
     @property
     def noiseDistribution(self) -> CenNormal:
@@ -132,11 +129,14 @@ class NormalNdLikelihoodLhU(LhU):
             tau = tau + 0.
 
         noiseDistribution = self.__likelihood.noiseDistribution
-        lhUfk = Normal(mu=mlMean, tau=tau,
-                       name="lhU{}".format(self.__f),
-                       drawType=noiseDistribution.drawType,
-                       updateType=noiseDistribution.updateType,
-                       persistent=False)
+        properties = Properties(name="lhU{}".format(self.__f),
+                                drawType=noiseDistribution.drawType,
+                                updateType=noiseDistribution.updateType,
+                                persistent=False)
+
+        lhUfk = Normal(mu=mlMean,
+                       tau=tau,
+                       properties=properties)
         return(lhUfk)
 
     def newUfk(self, Ufk: Tensor, k: Tensor) -> None:
