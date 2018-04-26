@@ -51,6 +51,11 @@ class NormalNdLikelihood(NormalLikelihood):
         residuals = X-Xhat
         return(residuals)
 
+    def llh(self, U: List[Tensor], X: Tensor) -> Tensor:
+        r = self.residuals(U, X)
+        llh = tf.reduce_sum(self.noiseDistribution.llh(r))
+        return(llh)
+
     def update(self, U: List[Tensor], X: Tensor) -> None:
         if self.noiseDistribution.updateType == UpdateType.ALL:
             residuals = self.residuals(U, X)

@@ -31,7 +31,7 @@ Decompose provides an interface that is similar to the interface of scikit-learn
 
    # create an instance of a decompose model
    model = DECOMPOSE(modelDirectory="/tmp/myNewModel",
-                     priors=[CenNormal, CenNormal],
+                     priors=[CenNormal(), CenNormal()],
                      n_components=3)
 
    # train the model and transform the training data

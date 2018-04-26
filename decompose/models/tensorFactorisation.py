@@ -13,6 +13,7 @@ from decompose.distributions.nnUniform import NnUniform
 from decompose.likelihoods.likelihood import Likelihood
 from decompose.likelihoods.normal2dLikelihood import Normal2dLikelihood
 from decompose.likelihoods.normalNdLikelihood import NormalNdLikelihood
+from decompose.likelihoods.cvNormal2dLikelihood import CVNormal2dLikelihood
 from decompose.postU.postU import PostU
 from decompose.stopCriterions.llhImprovementThreshold import LlhImprovementThreshold
 from decompose.stopCriterions.llhStall import LlhStall
@@ -268,9 +269,7 @@ class TensorFactorisation(object):
         """Evaluates the log likelihood of the model"""
 
         # log likelihood of the noise
-        r = self.residuals(X)
-        noiseDistribution = self.likelihood.noiseDistribution
-        llh = tf.reduce_sum(noiseDistribution.llh(tf.reshape(r, (-1,))))
+        llh = self.likelihood.llh(self.U, X)
 
         # log likelihood of the factors
         for f, postUf in enumerate(self.postU):
@@ -293,13 +292,19 @@ class TensorFactorisation(object):
     @classmethod
     def __model(cls, priorTypes, M: Tuple[int, ...], K: int,
                 stopCriterion, phase, dtype, reuse=False,
+                trainsetProb: float = 1.,
                 doRescale: bool = True, transform: bool = False,
                 suffix: str = ""):
         stopCriterion.init()
         F = len(priorTypes)
         with tf.variable_scope("", reuse=reuse):
             if F == 2:
-                likelihood = Normal2dLikelihood(M=M, K=K, dtype=dtype)  # type: Likelihood
+                if trainsetProb == 1.:
+                    likelihood = Normal2dLikelihood(
+                        M=M, K=K, dtype=dtype)  # type: Likelihood
+                else:
+                    likelihood = CVNormal2dLikelihood(
+                        M=M, K=K, dtype=dtype, trainsetProb=trainsetProb)
             else:
                 likelihood = NormalNdLikelihood(M=M, K=K, dtype=dtype)
             likelihood.init()
@@ -316,6 +321,7 @@ class TensorFactorisation(object):
 
     @classmethod
     def getEstimator(cls, priors, K: int, dtype,
+                     trainsetProb: float = 1.,
                      stopCriterionInit=LlhStall(10, ns="scInit"),
                      stopCriterionEM=LlhStall(100, ns="sc0"),
                      stopCriterionBCD=LlhImprovementThreshold(1e-2, ns="sc1"),
@@ -354,6 +360,7 @@ class TensorFactorisation(object):
                     else:
                         initPriors.append(Uniform())
                 tefaInit = cls.__model(priorTypes=initPriors, K=K, M=M,
+                                       trainsetProb=trainsetProb,
                                        stopCriterion=stopCriterionInit,
                                        dtype=dtype, reuse=False,
                                        doRescale=doRescale, phase=Phase.EM,
@@ -361,6 +368,7 @@ class TensorFactorisation(object):
 
                 # EM model
                 tefaEM = cls.__model(priorTypes=priors, K=K, M=M,
+                                     trainsetProb=trainsetProb,
                                      stopCriterion=stopCriterionEM,
                                      dtype=dtype, phase=Phase.EM,
                                      reuse=tf.AUTO_REUSE,
@@ -368,6 +376,7 @@ class TensorFactorisation(object):
 
                 # BCD model
                 tefaBCD = cls.__model(priorTypes=priors, K=K, M=M,
+                                      trainsetProb=trainsetProb,
                                       stopCriterion=stopCriterionBCD,
                                       dtype=dtype, phase=Phase.BCD,
                                       reuse=tf.AUTO_REUSE,

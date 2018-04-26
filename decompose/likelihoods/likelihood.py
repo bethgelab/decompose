@@ -46,11 +46,11 @@ class Likelihood(metaclass=ABCMeta):
         ...
 
     @abstractmethod
-    def residuals(self, U: List[Tensor], X: Tensor) -> tf.Tensor:
+    def init(self) -> None:
         ...
 
     @abstractmethod
-    def init(self) -> None:
+    def llh(self, U: List[Tensor], X: Tensor) -> Tensor:
         ...
 
     @property
