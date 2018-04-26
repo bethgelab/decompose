@@ -12,7 +12,7 @@ tf.logging.set_verbosity(tf.logging.INFO)
 
 @pytest.mark.system
 @pytest.mark.slow
-def test_sklearn_tensor(tmpdir):
+def test_sklearn_cv(tmpdir):
     """Tests the sk-learn interface of the tensor factorisation estimator.
 
     The test creates a `DECOMPOSE` object and applies its `fit_transform`
@@ -25,23 +25,25 @@ def test_sklearn_tensor(tmpdir):
     modelDirectory = str(tmpdir.mkdir("model"))
 
     # create a synthetic low rank dataset
-    K, M_train, M_test = 3, [500, 100, 50], [500, 100, 50]
+    K, M_train, M_test = 3, [500, 100], [200, 100]
     lrData = LowRank(rank=K, M_train=M_train, M_test=M_test)
 
     # instantiate a model
-    priors, K, dtype = [CenNormal(), CenNormal(), CenNormal()], K, np.float32
+    priors, K, dtype = [CenNormal(), CenNormal()], K, np.float32
     model = DECOMPOSE(modelDirectory, priors=priors, n_components=K,
-                      dtype=dtype)
+                      trainsetProb=0.8, dtype=dtype)
 
     # train the model
     U0 = model.fit_transform(lrData.training)
 
-    # check whether variance explained is between 0.95 and 1.
-    U1, U2 = model.components_
-    assert(0.95 <= lrData.var_expl_training((U0, U1, U2)) <= 1.)
+    # get mask marking the training set
+    mask = model.mask
 
-    # transform test data
-    transformModelDirectory = str(tmpdir.mkdir("transformModel"))
-    U0test = model.transform(transformModelDirectory=transformModelDirectory,
-                             X=lrData.test)
-    assert(0.95 <= lrData.var_expl_test((U0test, U1, U2)) <= 1.)
+    # check whether variance explained is between 0.95 and 1.
+    U1 = model.components_
+    testIndexes = mask.flatten() == 0.
+    testResiduals = (np.dot(U0.T, U1) - lrData.training).flatten()[testIndexes]
+    testData = lrData.training.flatten()[testIndexes]
+    testVarExpl = 1. - np.var(testResiduals)/np.var(testData)
+    print("testVarExpl", testVarExpl)
+    assert(0.95 <= lrData.var_expl_training((U0, U1)) <= 1.)

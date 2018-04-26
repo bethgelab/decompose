@@ -24,7 +24,7 @@ X = make_low_rank_matrix(n_samples=1000, n_features=1000,
 
 # create an instance of a decompose model
 model = DECOMPOSE(modelDirectory="/tmp/myNewModel",
-                  priors=[CenNormal, CenNormal],
+                  priors=[CenNormal(), CenNormal()],
                   n_components=3)
 
 # train the model and transform the training data

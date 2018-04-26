@@ -3,53 +3,37 @@ import tensorflow as tf
 from tensorflow import Tensor
 import numpy as np
 
-from decompose.distributions.distribution import DrawType, UpdateType
+from decompose.distributions.distribution import ParameterInfo
 from decompose.distributions.distribution import Distribution
 from decompose.distributions.normal import Normal
 from decompose.distributions.distribution import parameterProperty
 from decompose.distributions.algorithms import Algorithms
 from decompose.distributions.tAlgorithms import TAlgorithms
+from decompose.distributions.distribution import Properties
 
 
 class T(Distribution):
     def __init__(self,
-                 mu: Tensor = tf.constant([0.]),
-                 Psi: Tensor = tf.constant([1.]),
-                 nu: Tensor = tf.constant([1.]),
-                 tau: Tensor = tf.constant([1.]),
-                 name: str = "NA",
                  algorithms: Type[Algorithms] = TAlgorithms,
-                 drawType: DrawType = DrawType.SAMPLE,
-                 updateType: UpdateType = UpdateType.ALL,
-                 persistent: bool = True) -> None:
+                 mu: Tensor = None,
+                 Psi: Tensor = None,
+                 nu: Tensor = None,
+                 tau: Tensor = None,
+                 properties: Properties = None) -> None:
+        parameters = {"mu": mu, "Psi": Psi, "nu": nu, "tau": tau}
         Distribution.__init__(self,
-                              shape=mu.shape,
-                              latentShape=(),
-                              name=name,
-                              drawType=drawType,
-                              dtype=mu.dtype,
-                              updateType=updateType,
-                              persistent=persistent,
-                              algorithms=algorithms)
-        self._init({"mu": mu,
-                    "Psi": Psi,
-                    "nu": nu,
-                    "tau": tau})
+                              algorithms=algorithms,
+                              parameters=parameters,
+                              properties=properties)
 
-    @staticmethod
-    def initializers(shape: Tuple[int, ...] = (1,),
-                     latentShape: Tuple[int, ...] = (1000,),
-                     dtype: np.dtype = np.float32) -> Dict[str, Tensor]:
-        dtype = tf.as_dtype(dtype)
-        zero = tf.constant(0., dtype=dtype)
-        one = tf.constant(1., dtype=dtype)
-        normal = tf.distributions.Normal(loc=zero, scale=one)
-        exponential = tf.distributions.Exponential(rate=one)
+    def parameterInfo(self,
+                      shape: Tuple[int, ...] = (1,),
+                      latentShape: Tuple[int, ...] = ()) -> ParameterInfo:
         initializers = {
-            "mu": normal.sample(sample_shape=shape),
-            "Psi": exponential.sample(sample_shape=shape),
-            "nu": exponential.sample(sample_shape=shape),
-            "tau": exponential.sample(sample_shape=latentShape + shape)
+            "mu": (shape, False),
+            "Psi": (shape, True),
+            "nu": (shape, True),
+            "tau": (latentShape + shape, True)
         }  # type: Dict[str, Tensor]
         return(initializers)
 
@@ -86,8 +70,7 @@ class T(Distribution):
         self.__tau = tau
 
     @property
-    @classmethod
-    def nonNegative(cls) -> bool:
+    def nonNegative(self) -> bool:
         return(False)
 
     @property
@@ -101,8 +84,20 @@ class T(Distribution):
         mu = tf.ones_like(tau)*mu
         Psi = tf.ones_like(tau)*Psi
         name = self.name + "Cond"
-        cond = Normal(mu=mu, tau=tau/Psi, name=name,
-                      drawType=self.drawType,
-                      updateType=self.updateType,
-                      persistent=False)
+        properties = Properties(name=name,
+                                drawType=self.drawType,
+                                updateType=self.updateType,
+                                persistent=False)
+        cond = Normal(mu=mu,
+                      tau=tau/Psi,
+                      properties=properties)
         return(cond)
+
+    @property
+    def shape(self) -> Tuple[int, ...]:
+        return(tuple(self.mu.get_shape().as_list()))
+
+    @property
+    def latentShape(self) -> Tuple[int, ...]:
+        ndims = len(self.tau.get_shape().as_list()) - len(self.shape)
+        return(tuple(self.tau.get_shape().as_list()[:ndims]))

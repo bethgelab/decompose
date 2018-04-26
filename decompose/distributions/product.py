@@ -4,6 +4,7 @@ import tensorflow as tf
 
 from decompose.distributions.distribution import DrawType, UpdateType
 from decompose.distributions.distribution import Distribution
+from decompose.distributions.distribution import Properties
 
 
 class Product(metaclass=ABCMeta):
@@ -18,10 +19,12 @@ class Product(metaclass=ABCMeta):
         name = self.name(d0, d1)
         drawType = self.drawType(d0, d1)
         updateType = self.updateType(d0, d1)
-        params = {'name': name,
-                  'drawType': drawType,
-                  'updateType': updateType,
-                  'persistent': False}
+        persistent = False
+        properties = Properties(name=name,
+                                drawType=drawType,
+                                updateType=updateType,
+                                persistent=persistent)
+        params = {"properties": properties}
         return(params)
 
     def name(self, d0: Distribution, d1: Distribution) -> str:

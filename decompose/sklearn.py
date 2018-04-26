@@ -17,6 +17,7 @@ class DECOMPOSE(object):
     def __init__(self, modelDirectory: str,
                  priors: Tuple[type, ...] = (CenNormal, CenNormal),
                  n_components: int = 3,
+                 trainsetProb: float = 1.,
                  dtype: type = np.float32,
                  maxIterations: int = 100000,
                  doRescale: bool = True,
@@ -24,6 +25,7 @@ class DECOMPOSE(object):
                  stopCriterionEM=LlhStall(100, ns="sc0"),
                  stopCriterionBCD=LlhImprovementThreshold(1e-2, ns="sc1"),
                  device: str = "/cpu:0") -> None:
+        self.__trainsetProb = trainsetProb
         self.__maxIterations = maxIterations
         self.__n_components = n_components
         self.__priors = priors
@@ -34,6 +36,7 @@ class DECOMPOSE(object):
         tefa = TensorFactorisation.getEstimator(
             priors=priors,
             K=self.n_components,
+            trainsetProb=trainsetProb,
             dtype=tf.as_dtype(dtype),
             path=modelDirectory,
             doRescale=doRescale,
@@ -62,6 +65,10 @@ class DECOMPOSE(object):
     @property
     def variance_ratio_(self):
         return(self.__variance_ratio)
+
+    @property
+    def mask(self):
+        return(self.__mask)
 
     def __calc_variance_ratio(self, data, U):
         varData = np.var(data)
@@ -100,6 +107,8 @@ class DECOMPOSE(object):
         Us = tuple(UsList)
         self.__variance_ratio = self.__calc_variance_ratio(X, Us)
         self.__components_ = Us[1:]
+        if self.__trainsetProb < 1.:
+            self.__mask = ckptReader.get_tensor("dataMask")
         return(self)
 
     def fit_transform(self, X: np.ndarray):

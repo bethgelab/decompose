@@ -1,43 +1,31 @@
 from typing import Tuple, Any, Dict, Type
 import tensorflow as tf
 from tensorflow import Tensor
-import numpy as np
 
-from decompose.distributions.distribution import DrawType, UpdateType
 from decompose.distributions.distribution import Distribution
+from decompose.distributions.distribution import ParameterInfo
 from decompose.distributions.nnNormal import NnNormal
 from decompose.distributions.algorithms import Algorithms
 from decompose.distributions.cenNnNormalAlgorithms import CenNnNormalAlgorithms
+from decompose.distributions.distribution import Properties
 
 
 class CenNnNormal(NnNormal):
     def __init__(self,
-                 tau: Tensor = tf.constant([1.]),
-                 name: str = "NA",
                  algorithms: Type[Algorithms] = CenNnNormalAlgorithms,
-                 drawType: DrawType = DrawType.SAMPLE,
-                 updateType: UpdateType = UpdateType.ALL,
-                 persistent: bool = True) -> None:
+                 tau: Tensor = None,
+                 properties: Properties = None) -> None:
+        parameters = {"tau": tau}
         Distribution.__init__(self,
-                              shape=tau.shape,
-                              latentShape=(),
-                              name=name,
                               algorithms=algorithms,
-                              drawType=drawType,
-                              dtype=tau.dtype,
-                              updateType=updateType,
-                              persistent=persistent)
-        self._init({"tau": tau})
+                              parameters=parameters,
+                              properties=properties)
 
-    @staticmethod
-    def initializers(shape: Tuple[int, ...] = (1,),
-                     latentShape: Tuple[int, ...] = (),
-                     dtype: np.dtype = np.float32) -> Dict[str, Tensor]:
-        dtype = tf.as_dtype(dtype)
-        one = tf.constant(1., dtype=dtype)
-        exponential = tf.distributions.Exponential(rate=one)
+    def parameterInfo(self,
+                      shape: Tuple[int, ...] = (1,),
+                      latentShape: Tuple[int, ...] = ()) -> ParameterInfo:
         initializers = {
-            "tau": exponential.sample(sample_shape=shape)
+            "tau": (shape, True)
         }  # type: Dict[str, Tensor]
         return(initializers)
 

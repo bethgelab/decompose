@@ -49,7 +49,7 @@ def test_all_priors(tmpdir, PriorDistribution):
     randomData = Random(M=(100, 200))
 
     # instantiate a model
-    priors, K, dtype = [PriorDistribution, PriorDistribution], 3, np.float32
+    priors, K, dtype = [PriorDistribution(), PriorDistribution()], 3, np.float32
     stopCriterionInit = NIterations(10, ns="scInit")
     stopCriterionEM = NIterations(10, ns="sc0")
     stopCriterionBCD = NIterations(10, ns="sc1")
