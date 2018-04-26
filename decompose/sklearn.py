@@ -1,4 +1,4 @@
-from typing import Tuple, List
+from typing import Tuple, List, Dict
 import numpy as np
 import string
 import tensorflow as tf
@@ -109,6 +109,11 @@ class DECOMPOSE(object):
         self.__components_ = Us[1:]
         if self.__trainsetProb < 1.:
             self.__mask = ckptReader.get_tensor("dataMask")
+
+        variables = tf.contrib.framework.list_variables(ckptFile)
+        self.parameters = {}  # type: Dict[str, np.ndarray]
+        for variableName, _ in variables:
+            self.parameters[variableName] = ckptReader.get_tensor(variableName)
         return(self)
 
     def fit_transform(self, X: np.ndarray):
