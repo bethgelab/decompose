@@ -50,14 +50,11 @@ def test_all_priors(tmpdir, PriorDistribution):
 
     # instantiate a model
     priors, K, dtype = [PriorDistribution(), PriorDistribution()], 3, np.float32
-    stopCriterionInit = NIterations(10, ns="scInit")
-    stopCriterionEM = NIterations(10, ns="sc0")
-    stopCriterionBCD = NIterations(10, ns="sc1")
     tefa = TensorFactorisation.getEstimator(priors=priors,
                                             K=K,
-                                            stopCriterionInit=stopCriterionInit,
-                                            stopCriterionEM=stopCriterionEM,
-                                            stopCriterionBCD=stopCriterionBCD,
+                                            stopCriterionInit=NIterations(10),
+                                            stopCriterionEM=NIterations(10),
+                                            stopCriterionBCD=NIterations(10),
                                             dtype=tf.as_dtype(dtype),
                                             path=modelDirectory,
                                             device="/cpu:0",

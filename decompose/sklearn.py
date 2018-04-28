@@ -9,6 +9,7 @@ from decompose.distributions.cenNormal import CenNormal
 from decompose.stopCriterions.stopCriterion import StopHook
 from decompose.stopCriterions.llhImprovementThreshold import LlhImprovementThreshold
 from decompose.stopCriterions.llhStall import LlhStall
+from decompose.stopCriterions.stopCriterion import StopCriterion
 
 
 class DECOMPOSE(object):
@@ -21,9 +22,9 @@ class DECOMPOSE(object):
                  dtype: type = np.float32,
                  maxIterations: int = 100000,
                  doRescale: bool = True,
-                 stopCriterionInit=LlhStall(10, ns="scInit"),
-                 stopCriterionEM=LlhStall(100, ns="sc0"),
-                 stopCriterionBCD=LlhImprovementThreshold(1e-2, ns="sc1"),
+                 stopCriterionInit: StopCriterion = LlhStall(10),
+                 stopCriterionEM: StopCriterion = LlhStall(100),
+                 stopCriterionBCD: StopCriterion = LlhImprovementThreshold(.1),
                  device: str = "/cpu:0") -> None:
         self.__trainsetProb = trainsetProb
         self.__maxIterations = maxIterations

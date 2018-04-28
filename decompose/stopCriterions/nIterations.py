@@ -1,13 +1,15 @@
 import tensorflow as tf
 from tensorflow import Tensor
 
+from decompose.stopCriterions.stopCriterion import StopCriterion
 
-class NIterations(object):
-    def __init__(self, nIterations=100, ns="stopCriterion"):
+
+class NIterations(StopCriterion):
+    def __init__(self, nIterations=100):
         self.__nIterations = nIterations
-        self.__ns = ns
 
-    def init(self):
+    def init(self, ns: str = "stopCriterion") -> None:
+        self.__ns = ns
         with tf.variable_scope(self.__ns):
             iterationNumberVar = tf.get_variable("iterationNumber",
                                                  dtype=tf.int32,

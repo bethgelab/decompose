@@ -2,13 +2,15 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import Tensor
 
+from decompose.stopCriterions.stopCriterion import StopCriterion
 
-class LlhImprovementThreshold(object):
-    def __init__(self, lhImprovmentThreshold=1., ns="stopCriterion"):
+
+class LlhImprovementThreshold(StopCriterion):
+    def __init__(self, lhImprovmentThreshold=1.):
         self.__lhImprovmentThreshold = lhImprovmentThreshold
-        self.__ns = ns
 
-    def init(self):
+    def init(self, ns: str = "stopCriterion") -> None:
+        self.__ns = ns
         with tf.variable_scope(self.__ns):
             llhVar = tf.get_variable("llh",
                                      dtype=tf.float64,

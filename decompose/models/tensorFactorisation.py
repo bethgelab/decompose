@@ -82,8 +82,9 @@ class parameterProperty(object):
 
 
 class Phase(Enum):
-    EM = 1
-    BCD = 2
+    INIT = 1
+    EM = 2
+    BCD = 3
 
 
 class TensorFactorisation(object):
@@ -121,7 +122,7 @@ class TensorFactorisation(object):
                                         initializer=Uf)
             U[f] = UfVar
         self.__U = tuple(U)
-        if phase == Phase.EM:
+        if phase == Phase.EM or phase == Phase.INIT:
             self.__setEm()
         elif phase == Phase.BCD:
             self.__setBcd()
@@ -294,8 +295,9 @@ class TensorFactorisation(object):
                 K: int, stopCriterion, phase: Phase, dtype: tf.DType,
                 reuse=False, trainsetProb: float = 1.,
                 doRescale: bool = True, transform: bool = False,
-                suffix: str = ""):
-        stopCriterion.init()
+                suffix: str = "") -> "TensorFactorisation":
+        varscope = "stopCriterion" + phase.name
+        stopCriterion.init(ns=varscope)
         F = len(priorTypes)
         with tf.variable_scope("", reuse=reuse):
             if F == 2:
@@ -359,7 +361,7 @@ class TensorFactorisation(object):
                                    stopCriterion=stopCriterionInit,
                                    dtype=dtype, reuse=False,
                                    transform=transform,
-                                   doRescale=doRescale, phase=Phase.EM,
+                                   doRescale=doRescale, phase=Phase.INIT,
                                    suffix="init")
 
             # EM model
@@ -409,9 +411,9 @@ class TensorFactorisation(object):
     @classmethod
     def getEstimator(cls, priors: List[Distribution], K: int,
                      dtype: tf.DType = tf.float32, trainsetProb: float = 1.,
-                     stopCriterionInit=LlhStall(10, ns="scInit"),
-                     stopCriterionEM=LlhStall(100, ns="sc0"),
-                     stopCriterionBCD=LlhImprovementThreshold(1e-2, ns="sc1"),
+                     stopCriterionInit=LlhStall(10),
+                     stopCriterionEM=LlhStall(100),
+                     stopCriterionBCD=LlhImprovementThreshold(1e-2),
                      path: str = "/tmp", device: str = "/cpu:0",
                      doRescale: bool = True):
 
@@ -433,9 +435,9 @@ class TensorFactorisation(object):
     @classmethod
     def getTransformEstimator(cls, priors: List[Distribution], K: int,
                               chptFile: str, dtype: tf.DType = tf.float32,
-                              stopCriterionInit=LlhStall(10, ns="scInit"),
-                              stopCriterionEM=LlhStall(100, ns="sc0"),
-                              stopCriterionBCD=LlhImprovementThreshold(1e-2, ns="sc1"),
+                              stopCriterionInit=LlhStall(10),
+                              stopCriterionEM=LlhStall(100),
+                              stopCriterionBCD=LlhImprovementThreshold(1e-2),
                               path: str = "/tmp", device: str = "/cpu:0",
                               doRescale: bool = True):
         # configuring warm start settings
@@ -444,9 +446,9 @@ class TensorFactorisation(object):
                    if (v != "U/0" and
                        v != "global_step" and
                        v != "stop" and
-                       not v.startswith("scInit/") and
-                       not v.startswith("sc0/") and
-                       not v.startswith("sc1/"))]
+                       not v.startswith(f"stopCriterion{Phase.INIT.name}/") and
+                       not v.startswith(f"stopCriterion{Phase.EM.name}/") and
+                       not v.startswith(f"stopCriterion{Phase.BCD.name}/"))]
         wsVars = "|".join(varList)
         ws = tf.estimator.WarmStartSettings(ckpt_to_initialize_from=chptFile,
                                             vars_to_warm_start=wsVars)
