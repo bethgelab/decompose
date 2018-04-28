@@ -92,7 +92,11 @@ class CVNormal2dLikelihood(NormalLikelihood):
         llh = tf.reduce_sum(self.noiseDistribution.llh(r))/testsetProb
         return(llh)
 
-    def update(self, U: List[Tensor], X: Tensor) -> None:
+    def loss(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
+        loss = tf.reduce_sum(self.testResiduals(U, X)**2)
+        return(loss)
+
+    def update(self, U: Tuple[Tensor, ...], X: Tensor) -> None:
         if self.noiseDistribution.updateType == UpdateType.ALL:
             residuals = self.trainResiduals(U, X)
             flattenedResiduals = residuals[..., None]

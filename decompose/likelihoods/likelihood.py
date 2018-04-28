@@ -50,7 +50,11 @@ class Likelihood(metaclass=ABCMeta):
         ...
 
     @abstractmethod
-    def llh(self, U: List[Tensor], X: Tensor) -> Tensor:
+    def llh(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
+        ...
+
+    @abstractmethod
+    def loss(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
         ...
 
     @property

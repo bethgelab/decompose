@@ -261,10 +261,10 @@ class TensorFactorisation(object):
         self.likelihood.noiseDistribution.drawType = DrawType.MODE
         self.likelihood.noiseDistribution.updateType = UpdateType.ONLYLATENTS
 
-    def residuals(self, X: Tensor):
-        """Difference between the data and its reconstruction"""
-        r = self.likelihood.residuals(list(self.U), X)
-        return(r)
+    def loss(self, X: Tensor) -> Tensor:
+        """Loss of the data `X` given the parameters."""
+        loss = self.likelihood.loss(self.U, X)
+        return(loss)
 
     def llh(self, X: Tensor) -> float:
         """Evaluates the log likelihood of the model"""
@@ -381,7 +381,7 @@ class TensorFactorisation(object):
                                   transform=transform,
                                   reuse=tf.AUTO_REUSE,
                                   doRescale=doRescale)
-            loss = tf.reduce_sum(tefaBCD.residuals(data)**2)
+            loss = tefaBCD.loss(data)
 
             # conduct an update depending on the current phase
             stopVarInit = tefaInit.stopCriterion.stopVar

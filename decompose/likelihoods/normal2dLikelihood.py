@@ -54,7 +54,11 @@ class Normal2dLikelihood(NormalLikelihood):
         llh = tf.reduce_sum(self.noiseDistribution.llh(r))
         return(llh)
 
-    def update(self, U: List[Tensor], X: Tensor) -> None:
+    def loss(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
+        loss = tf.reduce_sum(self.residuals(U, X)**2)
+        return(loss)
+
+    def update(self, U: Tuple[Tensor, ...], X: Tensor) -> None:
         if self.noiseDistribution.updateType == UpdateType.ALL:
             residuals = self.residuals(U, X)
             flattenedResiduals = tf.reshape(residuals, (-1,))[..., None]
