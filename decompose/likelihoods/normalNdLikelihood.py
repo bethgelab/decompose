@@ -43,7 +43,7 @@ class NormalNdLikelihood(NormalLikelihood):
     def noiseDistribution(self) -> CenNormal:
         return(self.__noiseDistribution)
 
-    def residuals(self, U: List[Tensor], X: Tensor) -> Tensor:
+    def residuals(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
         F = len(U)
         axisIds = string.ascii_lowercase[:F]
         subscripts = f'k{",k".join(axisIds)}->{axisIds}'
@@ -51,7 +51,7 @@ class NormalNdLikelihood(NormalLikelihood):
         residuals = X-Xhat
         return(residuals)
 
-    def llh(self, U: List[Tensor], X: Tensor) -> Tensor:
+    def llh(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
         r = self.residuals(U, X)
         llh = tf.reduce_sum(self.noiseDistribution.llh(r))
         return(llh)

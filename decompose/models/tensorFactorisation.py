@@ -19,6 +19,9 @@ from decompose.stopCriterions.llhImprovementThreshold import LlhImprovementThres
 from decompose.stopCriterions.llhStall import LlhStall
 
 
+EstimatorSpec = tf.estimator.EstimatorSpec
+
+
 class parameterProperty(object):
     """Decorator for descriptors that update tf variables during set.
 
@@ -93,9 +96,9 @@ class TensorFactorisation(object):
                  U: List[Tensor],
                  priorU: List[Distribution],
                  likelihood: Likelihood,
-                 dtype,
+                 dtype: tf.DType,
                  stopCriterion,
-                 phase,
+                 phase: Phase,
                  doRescale: bool = True,
                  transform: bool = False) -> None:
 
@@ -135,8 +138,8 @@ class TensorFactorisation(object):
                likelihood: Likelihood,
                M: Tuple[int, ...],
                K: int,
-               dtype,
-               phase,
+               dtype: tf.DType,
+               phase: Phase,
                stopCriterion,
                doRescale: bool = True,
                transform: bool = False) -> "TensorFactorisation":
@@ -192,7 +195,7 @@ class TensorFactorisation(object):
         # return the updated tensors
         return(self.U)
 
-    def updateTrain(self, X: Tensor):
+    def updateTrain(self, X: Tensor) -> None:
             # store filterbanks in a list
             U = list(self.U)  # type: List[Tensor]
 
@@ -209,7 +212,7 @@ class TensorFactorisation(object):
             # update the filter banks
             self.U = tuple(U)
 
-    def updateTransform(self, X: Tensor):
+    def updateTransform(self, X: Tensor) -> None:
             # store filterbanks in a list
             U = list(self.U)  # type: List[Tensor]
 
@@ -266,8 +269,8 @@ class TensorFactorisation(object):
         loss = self.likelihood.loss(self.U, X)
         return(loss)
 
-    def llh(self, X: Tensor) -> float:
-        """Evaluates the log likelihood of the model"""
+    def llh(self, X: Tensor) -> Tensor:
+        """Log likelihood of the parameters given data `X`."""
 
         # log likelihood of the noise
         llh = self.likelihood.llh(self.U, X)
@@ -327,7 +330,7 @@ class TensorFactorisation(object):
                         priors: List[Distribution],
                         K: int, stopCriterionInit, stopCriterionEM,
                         stopCriterionBCD, doRescale: bool,
-                        transform: bool, dtype: tf.DType):
+                        transform: bool, dtype: tf.DType) -> EstimatorSpec:
         # PREDICT and EVAL are not supported
         if mode != tf.estimator.ModeKeys.TRAIN:
             raise ValueError
@@ -405,11 +408,10 @@ class TensorFactorisation(object):
                 step = tf.train.get_or_create_global_step()
                 trainOp = tf.assign(step, step + 1)
 
-        return tf.estimator.EstimatorSpec(mode, loss=loss,
-                                          train_op=trainOp)
+        return EstimatorSpec(mode, loss=loss, train_op=trainOp)
 
     @classmethod
-    def getEstimator(cls, priors: List[Distribution], K: int,
+    def getEstimator(cls, priors: Tuple[Distribution, ...], K: int,
                      dtype: tf.DType = tf.float32, trainsetProb: float = 1.,
                      stopCriterionInit=LlhStall(10),
                      stopCriterionEM=LlhStall(100),
@@ -433,7 +435,7 @@ class TensorFactorisation(object):
         return(est)
 
     @classmethod
-    def getTransformEstimator(cls, priors: List[Distribution], K: int,
+    def getTransformEstimator(cls, priors: Tuple[Distribution, ...], K: int,
                               chptFile: str, dtype: tf.DType = tf.float32,
                               stopCriterionInit=LlhStall(10),
                               stopCriterionEM=LlhStall(100),

@@ -59,14 +59,14 @@ class CVNormal2dLikelihood(NormalLikelihood):
     def noiseDistribution(self) -> CenNormal:
         return(self.__noiseDistribution)
 
-    def residuals(self, U: List[Tensor], X: Tensor) -> Tensor:
+    def residuals(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
         assert(len(U) == 2)
         U0, U1 = U
         Xhat = tf.matmul(tf.transpose(U0), U1)
         residuals = X-Xhat
         return(residuals)
 
-    def testResiduals(self, U: List[Tensor], X: Tensor) -> Tensor:
+    def testResiduals(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
         assert(len(U) == 2)
         U0, U1 = U
         Xhat = tf.matmul(tf.transpose(U0), U1)
@@ -76,7 +76,7 @@ class CVNormal2dLikelihood(NormalLikelihood):
         testResiduals = tf.gather_nd(residuals, indices)
         return(testResiduals)
 
-    def trainResiduals(self, U: List[Tensor], X: Tensor) -> Tensor:
+    def trainResiduals(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
         assert(len(U) == 2)
         U0, U1 = U
         Xhat = tf.matmul(tf.transpose(U0), U1)
@@ -86,7 +86,7 @@ class CVNormal2dLikelihood(NormalLikelihood):
         trainResiduals = tf.gather_nd(residuals, indices)
         return(trainResiduals)
 
-    def llh(self, U: List[Tensor], X: Tensor) -> Tensor:
+    def llh(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
         testsetProb = 1. - self.__trainsetProb
         r = self.testResiduals(U, X)
         llh = tf.reduce_sum(self.noiseDistribution.llh(r))/testsetProb

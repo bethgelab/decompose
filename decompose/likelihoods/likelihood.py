@@ -32,7 +32,7 @@ class Likelihood(metaclass=ABCMeta):
         self.__F = len(M)
 
     @abstractmethod
-    def update(self, U: List[Tensor], X: Tensor) -> None:
+    def update(self, U: Tuple[Tensor, ...], X: Tensor) -> None:
         ...
 
     @property

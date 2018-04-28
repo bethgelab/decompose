@@ -8,7 +8,6 @@ from decompose.distributions.distribution import DrawType, UpdateType
 from decompose.distributions.cenNormal import CenNormal
 from decompose.distributions.normal import Normal
 from decompose.likelihoods.likelihood import NormalLikelihood, LhU
-from decompose.distributions.distribution import Properties
 
 
 class Normal2dLikelihood(NormalLikelihood):
@@ -42,14 +41,14 @@ class Normal2dLikelihood(NormalLikelihood):
     def noiseDistribution(self) -> CenNormal:
         return(self.__noiseDistribution)
 
-    def residuals(self, U: List[Tensor], X: Tensor) -> Tensor:
+    def residuals(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
         assert(len(U) == 2)
         U0, U1 = U
         Xhat = tf.matmul(tf.transpose(U0), U1)
         residuals = tf.reshape(X-Xhat, (-1,))
         return(residuals)
 
-    def llh(self, U: List[Tensor], X: Tensor) -> Tensor:
+    def llh(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
         r = self.residuals(U, X)
         llh = tf.reduce_sum(self.noiseDistribution.llh(r))
         return(llh)
