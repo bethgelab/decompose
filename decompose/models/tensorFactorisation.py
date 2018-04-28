@@ -19,6 +19,9 @@ from decompose.stopCriterions.llhImprovementThreshold import LlhImprovementThres
 from decompose.stopCriterions.llhStall import LlhStall
 
 
+EstimatorSpec = tf.estimator.EstimatorSpec
+
+
 class parameterProperty(object):
     """Decorator for descriptors that update tf variables during set.
 
@@ -82,8 +85,9 @@ class parameterProperty(object):
 
 
 class Phase(Enum):
-    EM = 1
-    BCD = 2
+    INIT = 1
+    EM = 2
+    BCD = 3
 
 
 class TensorFactorisation(object):
@@ -92,9 +96,9 @@ class TensorFactorisation(object):
                  U: List[Tensor],
                  priorU: List[Distribution],
                  likelihood: Likelihood,
-                 dtype,
+                 dtype: tf.DType,
                  stopCriterion,
-                 phase,
+                 phase: Phase,
                  doRescale: bool = True,
                  transform: bool = False) -> None:
 
@@ -121,7 +125,7 @@ class TensorFactorisation(object):
                                         initializer=Uf)
             U[f] = UfVar
         self.__U = tuple(U)
-        if phase == Phase.EM:
+        if phase == Phase.EM or phase == Phase.INIT:
             self.__setEm()
         elif phase == Phase.BCD:
             self.__setBcd()
@@ -134,8 +138,8 @@ class TensorFactorisation(object):
                likelihood: Likelihood,
                M: Tuple[int, ...],
                K: int,
-               dtype,
-               phase,
+               dtype: tf.DType,
+               phase: Phase,
                stopCriterion,
                doRescale: bool = True,
                transform: bool = False) -> "TensorFactorisation":
@@ -191,7 +195,7 @@ class TensorFactorisation(object):
         # return the updated tensors
         return(self.U)
 
-    def updateTrain(self, X: Tensor):
+    def updateTrain(self, X: Tensor) -> None:
             # store filterbanks in a list
             U = list(self.U)  # type: List[Tensor]
 
@@ -208,7 +212,7 @@ class TensorFactorisation(object):
             # update the filter banks
             self.U = tuple(U)
 
-    def updateTransform(self, X: Tensor):
+    def updateTransform(self, X: Tensor) -> None:
             # store filterbanks in a list
             U = list(self.U)  # type: List[Tensor]
 
@@ -260,13 +264,13 @@ class TensorFactorisation(object):
         self.likelihood.noiseDistribution.drawType = DrawType.MODE
         self.likelihood.noiseDistribution.updateType = UpdateType.ONLYLATENTS
 
-    def residuals(self, X: Tensor):
-        """Difference between the data and its reconstruction"""
-        r = self.likelihood.residuals(list(self.U), X)
-        return(r)
+    def loss(self, X: Tensor) -> Tensor:
+        """Loss of the data `X` given the parameters."""
+        loss = self.likelihood.loss(self.U, X)
+        return(loss)
 
-    def llh(self, X: Tensor) -> float:
-        """Evaluates the log likelihood of the model"""
+    def llh(self, X: Tensor) -> Tensor:
+        """Log likelihood of the parameters given data `X`."""
 
         # log likelihood of the noise
         llh = self.likelihood.llh(self.U, X)
@@ -290,12 +294,13 @@ class TensorFactorisation(object):
         return(strId)
 
     @classmethod
-    def __model(cls, priorTypes, M: Tuple[int, ...], K: int,
-                stopCriterion, phase, dtype, reuse=False,
-                trainsetProb: float = 1.,
+    def __model(cls, priorTypes: List[Distribution], M: Tuple[int, ...],
+                K: int, stopCriterion, phase: Phase, dtype: tf.DType,
+                reuse=False, trainsetProb: float = 1.,
                 doRescale: bool = True, transform: bool = False,
-                suffix: str = ""):
-        stopCriterion.init()
+                suffix: str = "") -> "TensorFactorisation":
+        varscope = "stopCriterion" + phase.name
+        stopCriterion.init(ns=varscope)
         F = len(priorTypes)
         with tf.variable_scope("", reuse=reuse):
             if F == 2:
@@ -320,103 +325,121 @@ class TensorFactorisation(object):
         return(tefa)
 
     @classmethod
-    def getEstimator(cls, priors, K: int, dtype,
-                     trainsetProb: float = 1.,
-                     stopCriterionInit=LlhStall(10, ns="scInit"),
-                     stopCriterionEM=LlhStall(100, ns="sc0"),
-                     stopCriterionBCD=LlhImprovementThreshold(1e-2, ns="sc1"),
+    def __estimatorSpec(cls, mode, features, device: str,
+                        trainsetProb: float,
+                        priors: List[Distribution],
+                        K: int, stopCriterionInit, stopCriterionEM,
+                        stopCriterionBCD, doRescale: bool,
+                        transform: bool, dtype: tf.DType) -> EstimatorSpec:
+        # PREDICT and EVAL are not supported
+        if mode != tf.estimator.ModeKeys.TRAIN:
+            raise ValueError
+
+        # TRAIN
+        with tf.device(device):
+            # check the input data
+            labels = list(features.keys())
+            assert len(labels) == 1
+            data = features[labels[0]]
+            dataShape = tuple(data.get_shape().as_list())
+            assert len(dataShape) == len(priors)
+
+            # shape of the data
+            M = data.get_shape().as_list()
+
+            # create global stopping variable
+            with tf.variable_scope("stopCriterion"):
+                stopVar = tf.get_variable("stop", dtype=tf.bool,
+                                          initializer=False)
+
+            # INIT model
+            initPriors = []  # type: List[Distribution]
+            for prior in priors:
+                if prior.nonNegative:
+                    initPriors.append(NnUniform())
+                else:
+                    initPriors.append(Uniform())
+            tefaInit = cls.__model(priorTypes=initPriors, K=K, M=M,
+                                   trainsetProb=trainsetProb,
+                                   stopCriterion=stopCriterionInit,
+                                   dtype=dtype, reuse=False,
+                                   transform=transform,
+                                   doRescale=doRescale, phase=Phase.INIT,
+                                   suffix="init")
+
+            # EM model
+            tefaEM = cls.__model(priorTypes=priors, K=K, M=M,
+                                 trainsetProb=trainsetProb,
+                                 stopCriterion=stopCriterionEM,
+                                 dtype=dtype, phase=Phase.EM,
+                                 transform=transform,
+                                 reuse=tf.AUTO_REUSE,
+                                 doRescale=doRescale)
+
+            # BCD model
+            tefaBCD = cls.__model(priorTypes=priors, K=K, M=M,
+                                  trainsetProb=trainsetProb,
+                                  stopCriterion=stopCriterionBCD,
+                                  dtype=dtype, phase=Phase.BCD,
+                                  transform=transform,
+                                  reuse=tf.AUTO_REUSE,
+                                  doRescale=doRescale)
+            loss = tefaBCD.loss(data)
+
+            # conduct an update depending on the current phase
+            stopVarInit = tefaInit.stopCriterion.stopVar
+            stopVarEm = tefaEM.stopCriterion.stopVar
+            deps = tf.cond(tf.logical_not(stopVarInit),
+                           lambda: tefaInit.update(X=data),
+                           lambda: tf.cond(tf.logical_not(stopVarEm),
+                                           lambda: tefaEM.update(X=data),
+                                           lambda: tefaBCD.update(X=data)))
+
+            # update the global stop variable
+            stopVarBcd = tefaBCD.stopCriterion.stopVar
+            stop = tf.logical_and(stopVarInit,
+                                  tf.logical_and(stopVarEm,
+                                                 stopVarBcd))
+            with tf.control_dependencies(deps):
+                updatedStopVar = tf.assign(stopVar, stop)
+
+            # increment global step variable
+            with tf.control_dependencies([updatedStopVar]):
+                step = tf.train.get_or_create_global_step()
+                trainOp = tf.assign(step, step + 1)
+
+        return EstimatorSpec(mode, loss=loss, train_op=trainOp)
+
+    @classmethod
+    def getEstimator(cls, priors: Tuple[Distribution, ...], K: int,
+                     dtype: tf.DType = tf.float32, trainsetProb: float = 1.,
+                     stopCriterionInit=LlhStall(10),
+                     stopCriterionEM=LlhStall(100),
+                     stopCriterionBCD=LlhImprovementThreshold(1e-2),
                      path: str = "/tmp", device: str = "/cpu:0",
                      doRescale: bool = True):
 
         def model_fn(features, labels, mode):
-
-            # PREDICT and EVAL are not supported
-            if mode != tf.estimator.ModeKeys.TRAIN:
-                raise ValueError
-
-            # TRAIN
-            with tf.device(device):
-                # check the input data
-                labels = list(features.keys())
-                assert len(labels) == 1
-                data = features[labels[0]]
-                dtype = data.dtype
-                dataShape = tuple(data.get_shape().as_list())
-                assert len(dataShape) == len(priors)
-
-                # shape of the data
-                M = data.get_shape().as_list()
-
-                # create global stopping variable
-                with tf.variable_scope("stopCriterion"):
-                    stopVar = tf.get_variable("stop", dtype=tf.bool,
-                                              initializer=False)
-
-                # INIT model
-                initPriors = []
-                for prior in priors:
-                    if prior.nonNegative:
-                        initPriors.append(NnUniform())
-                    else:
-                        initPriors.append(Uniform())
-                tefaInit = cls.__model(priorTypes=initPriors, K=K, M=M,
-                                       trainsetProb=trainsetProb,
-                                       stopCriterion=stopCriterionInit,
-                                       dtype=dtype, reuse=False,
-                                       doRescale=doRescale, phase=Phase.EM,
-                                       suffix="init")
-
-                # EM model
-                tefaEM = cls.__model(priorTypes=priors, K=K, M=M,
+            es = cls.__estimatorSpec(mode=mode, features=features,
                                      trainsetProb=trainsetProb,
-                                     stopCriterion=stopCriterionEM,
-                                     dtype=dtype, phase=Phase.EM,
-                                     reuse=tf.AUTO_REUSE,
-                                     doRescale=doRescale)
-
-                # BCD model
-                tefaBCD = cls.__model(priorTypes=priors, K=K, M=M,
-                                      trainsetProb=trainsetProb,
-                                      stopCriterion=stopCriterionBCD,
-                                      dtype=dtype, phase=Phase.BCD,
-                                      reuse=tf.AUTO_REUSE,
-                                      doRescale=doRescale)
-                loss = tf.reduce_sum(tefaBCD.residuals(data)**2)
-
-                # conduct an update depending on the current phase
-                stopVarInit = tefaInit.stopCriterion.stopVar
-                stopVarEm = tefaEM.stopCriterion.stopVar
-                deps = tf.cond(tf.logical_not(stopVarInit),
-                               lambda: tefaInit.update(X=data),
-                               lambda: tf.cond(tf.logical_not(stopVarEm),
-                                               lambda: tefaEM.update(X=data),
-                                               lambda: tefaBCD.update(X=data)))
-
-                # update the global stop variable
-                stopVarBcd = tefaBCD.stopCriterion.stopVar
-                stop = tf.logical_and(stopVarInit,
-                                      tf.logical_and(stopVarEm,
-                                                     stopVarBcd))
-                with tf.control_dependencies(deps):
-                    updatedStopVar = tf.assign(stopVar, stop)
-
-                # increment global step variable
-                with tf.control_dependencies([updatedStopVar]):
-                    step = tf.train.get_or_create_global_step()
-                    trainOp = tf.assign(step, step + 1)
-
-                return tf.estimator.EstimatorSpec(mode, loss=loss,
-                                                  train_op=trainOp)
+                                     device=device, priors=priors,
+                                     stopCriterionInit=stopCriterionInit,
+                                     stopCriterionEM=stopCriterionEM,
+                                     stopCriterionBCD=stopCriterionBCD,
+                                     doRescale=doRescale, K=K,
+                                     transform=False, dtype=dtype)
+            return(es)
 
         est = tf.estimator.Estimator(model_fn=model_fn,
                                      model_dir=path)
         return(est)
 
     @classmethod
-    def getTransformEstimator(cls, priors, K: int, dtype, chptFile: str,
-                              stopCriterionInit=LlhStall(10, ns="scInit"),
-                              stopCriterionEM=LlhStall(100, ns="sc0"),
-                              stopCriterionBCD=LlhImprovementThreshold(1e-2, ns="sc1"),
+    def getTransformEstimator(cls, priors: Tuple[Distribution, ...], K: int,
+                              chptFile: str, dtype: tf.DType = tf.float32,
+                              stopCriterionInit=LlhStall(10),
+                              stopCriterionEM=LlhStall(100),
+                              stopCriterionBCD=LlhImprovementThreshold(1e-2),
                               path: str = "/tmp", device: str = "/cpu:0",
                               doRescale: bool = True):
         # configuring warm start settings
@@ -425,92 +448,23 @@ class TensorFactorisation(object):
                    if (v != "U/0" and
                        v != "global_step" and
                        v != "stop" and
-                       not v.startswith("scInit/") and
-                       not v.startswith("sc0/") and
-                       not v.startswith("sc1/"))]
+                       not v.startswith(f"stopCriterion{Phase.INIT.name}/") and
+                       not v.startswith(f"stopCriterion{Phase.EM.name}/") and
+                       not v.startswith(f"stopCriterion{Phase.BCD.name}/"))]
         wsVars = "|".join(varList)
         ws = tf.estimator.WarmStartSettings(ckpt_to_initialize_from=chptFile,
                                             vars_to_warm_start=wsVars)
 
         def model_fn(features, labels, mode):
-
-            # PREDICT and EVAL are not supported
-            if mode != tf.estimator.ModeKeys.TRAIN:
-                raise ValueError
-
-            # TRAIN
-            with tf.device(device):
-                # check the input data
-                labels = list(features.keys())
-                assert len(labels) == 1
-                data = features[labels[0]]
-                dtype = data.dtype
-                dataShape = tuple(data.get_shape().as_list())
-                assert len(dataShape) == len(priors)
-
-                # shape of the data
-                M = data.get_shape().as_list()
-
-                # create global stopping variable
-                with tf.variable_scope("stopCriterion"):
-                    stopVar = tf.get_variable("stop", dtype=tf.bool,
-                                              initializer=False)
-
-                # INIT model
-                initPriors = []
-                for prior in priors:
-                    if prior.nonNegative:
-                        initPriors.append(NnUniform())
-                    else:
-                        initPriors.append(Uniform())
-                tefaInit = cls.__model(priorTypes=initPriors, K=K, M=M,
-                                       stopCriterion=stopCriterionInit,
-                                       dtype=dtype, reuse=False,
-                                       transform=True,
-                                       doRescale=doRescale, phase=Phase.EM,
-                                       suffix="init")
-
-                # EM model
-                tefaEM = cls.__model(priorTypes=priors, K=K, M=M,
-                                     stopCriterion=stopCriterionEM,
-                                     dtype=dtype, phase=Phase.EM,
-                                     transform=True,
-                                     reuse=tf.AUTO_REUSE,
-                                     doRescale=doRescale)
-
-                # BCD model
-                tefaBCD = cls.__model(priorTypes=priors, K=K, M=M,
-                                      stopCriterion=stopCriterionBCD,
-                                      dtype=dtype, phase=Phase.BCD,
-                                      transform=True,
-                                      reuse=tf.AUTO_REUSE,
-                                      doRescale=doRescale)
-                loss = tf.reduce_sum(tefaBCD.residuals(data)**2)
-
-                # conduct an update depending on the current phase
-                stopVarInit = tefaInit.stopCriterion.stopVar
-                stopVarEm = tefaEM.stopCriterion.stopVar
-                deps = tf.cond(tf.logical_not(stopVarInit),
-                               lambda: tefaInit.update(X=data),
-                               lambda: tf.cond(tf.logical_not(stopVarEm),
-                                               lambda: tefaEM.update(X=data),
-                                               lambda: tefaBCD.update(X=data)))
-
-                # update the global stop variable
-                stopVarBcd = tefaBCD.stopCriterion.stopVar
-                stop = tf.logical_and(stopVarInit,
-                                      tf.logical_and(stopVarEm,
-                                                     stopVarBcd))
-                with tf.control_dependencies(deps):
-                    updatedStopVar = tf.assign(stopVar, stop)
-
-                # increment global step variable
-                with tf.control_dependencies([updatedStopVar]):
-                    step = tf.train.get_or_create_global_step()
-                    trainOp = tf.assign(step, step + 1)
-
-                return tf.estimator.EstimatorSpec(mode, loss=loss,
-                                                  train_op=trainOp)
+            es = cls.__estimatorSpec(mode=mode, features=features,
+                                     trainsetProb=1.,
+                                     device=device, priors=priors,
+                                     stopCriterionInit=stopCriterionInit,
+                                     stopCriterionEM=stopCriterionEM,
+                                     stopCriterionBCD=stopCriterionBCD,
+                                     doRescale=doRescale, K=K,
+                                     transform=True, dtype=dtype)
+            return(es)
 
         est = tf.estimator.Estimator(model_fn=model_fn,
                                      model_dir=path,

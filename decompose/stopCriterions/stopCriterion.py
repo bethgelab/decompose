@@ -1,13 +1,21 @@
-import numpy as np
+from abc import ABC, abstractmethod
 import tensorflow as tf
 from tensorflow import Tensor
 
 
-class NoStop(object):
-    def __init__(self, ns="stopCriterion"):
-        self.__ns = ns
+class StopCriterion(ABC):
 
-    def init(self):
+    @abstractmethod
+    def init(self, ns: str) -> None:
+        ...
+
+
+class NoStop(StopCriterion):
+    def __init__(self):
+        pass
+
+    def init(self, ns="stopCriterion"):
+        self.__ns = ns
         with tf.variable_scope(self.__ns):
             stopVar = tf.get_variable("stop",
                                       dtype=tf.bool,

@@ -2,14 +2,15 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import Tensor
 
+from decompose.stopCriterions.stopCriterion import StopCriterion
 
-class LlhStall(object):
-    def __init__(self, nStalledIterationsThreshold: int = 100,
-                 ns: str = "stopCriterion") -> None:
+
+class LlhStall(StopCriterion):
+    def __init__(self, nStalledIterationsThreshold: int = 100) -> None:
         self.__nStalledIterationsThrehold = nStalledIterationsThreshold
-        self.__ns = ns
 
-    def init(self):
+    def init(self, ns: str = "stopCriterion") -> None:
+        self.__ns = ns
         llhsInit = -np.inf*tf.ones(self.__nStalledIterationsThrehold,
                                    dtype=tf.float64)
         with tf.variable_scope(self.__ns):
