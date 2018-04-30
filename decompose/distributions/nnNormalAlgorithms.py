@@ -37,7 +37,7 @@ class NnNormalAlgorithms(Algorithms):
         sigma = 1./tf.sqrt(tau)
         pdf = (1.
                / sigma
-               * norm.pdf(value=((data-mu)/sigma))
+               * norm.prob(value=((data-mu)/sigma))
                / norm.cdf(value=(mu/sigma)))
         pdf = tf.where(tf.greater(data, 0.), pdf, tf.zeros_like(pdf))
         return(pdf)
