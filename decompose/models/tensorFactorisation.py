@@ -267,6 +267,7 @@ class TensorFactorisation(object):
     def loss(self, X: Tensor) -> Tensor:
         """Loss of the data `X` given the parameters."""
         loss = self.likelihood.loss(self.U, X)
+        loss = tf.cast(loss, tf.float64)
         return(loss)
 
     def llh(self, X: Tensor) -> Tensor:
@@ -279,6 +280,7 @@ class TensorFactorisation(object):
         for f, postUf in enumerate(self.postU):
             llhUf = tf.reduce_sum(postUf.prior.llh(tf.transpose(self.U[f])))
             llh = llh + llhUf
+        llh = tf.cast(llh, tf.float64)
         return(llh)
 
     @staticmethod
@@ -347,6 +349,17 @@ class TensorFactorisation(object):
             # shape of the data
             M = data.get_shape().as_list()
 
+            # create llh variable
+            inf = np.float64(np.inf)
+            with tf.variable_scope("llh"):
+                llhVar = tf.get_variable("llh", dtype=tf.float64,
+                                         initializer=-inf)
+
+            # create loss variable
+            with tf.variable_scope("loss"):
+                lossVar = tf.get_variable("loss", dtype=tf.float64,
+                                          initializer=inf)
+
             # create global stopping variable
             with tf.variable_scope("stopCriterion"):
                 stopVar = tf.get_variable("stop", dtype=tf.bool,
@@ -403,8 +416,14 @@ class TensorFactorisation(object):
             with tf.control_dependencies(deps):
                 updatedStopVar = tf.assign(stopVar, stop)
 
+            # if stopping criterion is reached store the llh
+            updates = tf.cond(stop,
+                              lambda: (tf.assign(llhVar, tefaBCD.llh(data)),
+                                       tf.assign(lossVar, tefaBCD.loss(data))),
+                              lambda: (llhVar, lossVar))
+
             # increment global step variable
-            with tf.control_dependencies([updatedStopVar]):
+            with tf.control_dependencies([updatedStopVar, *updates]):
                 step = tf.train.get_or_create_global_step()
                 trainOp = tf.assign(step, step + 1)
 

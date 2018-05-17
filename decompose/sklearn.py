@@ -116,6 +116,11 @@ class DECOMPOSE(object):
         self.parameters = {}  # type: Dict[str, np.ndarray]
         for variableName, _ in variables:
             self.parameters[variableName] = ckptReader.get_tensor(variableName)
+
+        # store the likelihood and loss
+        self.llh = ckptReader.get_tensor("llh/llh")
+        self.loss = ckptReader.get_tensor("loss/loss")
+
         return(self)
 
     def fit_transform(self, X: np.ndarray) -> np.ndarray:
