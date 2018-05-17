@@ -51,12 +51,6 @@ class PostU(object):
         return(U[f])
 
     def updateK(self, k, prepVars, U):
-        if self.prior.drawType == DrawType.SAMPLE:
-            return(self.updateKSample(k, prepVars, U))
-        else:
-            return(self.updateKSample(k, prepVars, U))
-
-    def updateKSample(self, k, prepVars, U):
         f = self.__f
 
         UfShape = U[f].get_shape()
@@ -74,29 +68,4 @@ class PostU(object):
         # TODO: if valid -> self.__likelihood.lhU()[f].updateUfk(U[f][k], k)
         Uf.set_shape(UfShape)
         U[f] = Uf
-        return(U)
-
-    def updateKMode(self, k, prepVars, U, normalize, absMax):
-        f = self.__f
-
-        UfShape = U[f].get_shape()
-
-        lhUfk = self.__likelihood.lhU[f].lhUfk(U, prepVars, k)
-        postfk = lhUfk*self.prior[k].cond()
-        Ufk = postfk.draw()
-        if normalize:
-            Ufk = Ufk/tf.norm(Ufk)
-        Ufk = tf.expand_dims(Ufk, 0)
-
-        Ufk = tf.where(tf.greater(tf.abs(Ufk), absMax[k]),
-                       tf.sign(Ufk)*absMax[k], Ufk)
-
-        isValid = tf.reduce_all(tf.is_finite(Ufk))
-        Uf = tf.cond(isValid, lambda: self.updateUf(U[f], Ufk, k),
-                     lambda: U[f])
-
-        # TODO: if valid -> self.__likelihood.lhU()[f].updateUfk(U[f][k], k)
-        Uf.set_shape(UfShape)
-        U[f] = Uf
-
         return(U)
