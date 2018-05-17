@@ -36,7 +36,7 @@ class CVNormal2dLikelihood(NormalLikelihood):
     def type():
         return(CVNormal2dLikelihood)
 
-    def init(self) -> None:
+    def init(self, data: Tensor) -> None:
         tau = self.__tauInit
         dtype = self.__dtype
         properties = self.__properties

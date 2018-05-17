@@ -31,7 +31,7 @@ class NormalNdLikelihood(NormalLikelihood):
             lhUf = NormalNdLikelihoodLhU(f, self)
             self.__lhU.append(lhUf)
 
-    def init(self) -> None:
+    def init(self, data: Tensor) -> None:
         tau = self.__tauInit
         dtype = self.__dtype
         properties = self.__properties
