@@ -58,10 +58,11 @@ class PostU(object):
         lhUfk = self.__likelihood.lhU[f].lhUfk(U, prepVars, k)
         postfk = lhUfk*self.prior[k].cond()
         Ufk = postfk.draw()
-
         Ufk = tf.expand_dims(Ufk, 0)
 
-        isValid = tf.reduce_all(tf.is_finite(Ufk))
+        allZero = tf.reduce_all(tf.equal(Ufk, 0.))
+        isFinite = tf.reduce_all(tf.is_finite(Ufk))
+        isValid = tf.logical_and(isFinite, tf.logical_not(allZero))
         Uf = tf.cond(isValid, lambda: self.updateUf(U[f], Ufk, k),
                      lambda: U[f])
 
