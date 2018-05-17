@@ -66,7 +66,7 @@ class CenDoubleLomax(Distribution):
 
     @property
     def nonNegative(self) -> bool:
-        return(True)
+        return(False)
 
     @property
     def homogenous(self) -> bool:

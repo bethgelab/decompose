@@ -14,9 +14,9 @@ class CenDoubleLomaxAlgorithms(Algorithms):
         alpha, beta = parameters["alpha"], parameters["beta"]
         gamma = tf.distributions.Gamma(concentration=alpha, rate=beta)
         tau = gamma.sample(sample_shape=(nSamples,))
-        exp = tf.distributions.Laplace(scale=1./tau,
+        lap = tf.distributions.Laplace(scale=1./tau,
                                        loc=tf.zeros_like(alpha))
-        s = exp.sample()
+        s = lap.sample()
         return(s)
 
     @classmethod
