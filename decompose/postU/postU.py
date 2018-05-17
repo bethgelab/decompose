@@ -29,11 +29,14 @@ class PostU(object):
         UfUpdated = tf.concat((Uf[:k], Ufk, Uf[k+1:]), 0)
         return(UfUpdated)
 
-    def update(self, U: Tensor, X: Tensor, t) -> Tuple[Tensor, Tensor]:
+    def update(self, U: Tensor, X: Tensor,
+               transform: bool) -> Tuple[Tensor, Tensor]:
         f, K = self.__f, self.__K
 
-        if not t:
+        if not transform:
             self.prior.update(data=tf.transpose(U[f]))
+        else:
+            self.prior.fitLatents(data=tf.transpose(U[f]))
 
         prepVars = self.__likelihood.lhU[f].prepVars(U, X)
 
