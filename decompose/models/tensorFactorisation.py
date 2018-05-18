@@ -14,6 +14,7 @@ from decompose.likelihoods.likelihood import Likelihood
 from decompose.likelihoods.normal2dLikelihood import Normal2dLikelihood
 from decompose.likelihoods.normalNdLikelihood import NormalNdLikelihood
 from decompose.likelihoods.cvNormal2dLikelihood import CVNormal2dLikelihood
+from decompose.likelihoods.cvNormalNdLikelihood import CVNormalNdLikelihood
 from decompose.postU.postU import PostU
 from decompose.stopCriterions.llhImprovementThreshold import LlhImprovementThreshold
 from decompose.stopCriterions.llhStall import LlhStall
@@ -296,9 +297,11 @@ class TensorFactorisation(object):
         return(strId)
 
     @classmethod
-    def __model(cls, priorTypes: List[Distribution], M: Tuple[int, ...],
+    def __model(cls, data: Tensor, priorTypes: List[Distribution],
+                M: Tuple[int, ...],
                 K: int, stopCriterion, phase: Phase, dtype: tf.DType,
                 reuse=False, trainsetProb: float = 1.,
+                isFullyObserved: bool = True,
                 doRescale: bool = True, transform: bool = False,
                 suffix: str = "") -> "TensorFactorisation":
         varscope = "stopCriterion" + phase.name
@@ -306,15 +309,20 @@ class TensorFactorisation(object):
         F = len(priorTypes)
         with tf.variable_scope("", reuse=reuse):
             if F == 2:
-                if trainsetProb == 1.:
+                if trainsetProb == 1. and isFullyObserved:
                     likelihood = Normal2dLikelihood(
                         M=M, K=K, dtype=dtype)  # type: Likelihood
                 else:
                     likelihood = CVNormal2dLikelihood(
                         M=M, K=K, dtype=dtype, trainsetProb=trainsetProb)
             else:
-                likelihood = NormalNdLikelihood(M=M, K=K, dtype=dtype)
-            likelihood.init()
+                if trainsetProb == 1. and isFullyObserved:
+                    likelihood = NormalNdLikelihood(
+                        M=M, K=K, dtype=dtype)
+                else:
+                    likelihood = CVNormalNdLikelihood(
+                        M=M, K=K, dtype=dtype, trainsetProb=trainsetProb)
+            likelihood.init(data)
             priors = []
             for f, priorType in enumerate(priorTypes):
                 prior = priorType.random(shape=(K,), latentShape=(M[f],),
@@ -329,6 +337,7 @@ class TensorFactorisation(object):
     @classmethod
     def __estimatorSpec(cls, mode, features, device: str,
                         trainsetProb: float,
+                        isFullyObserved: bool,
                         priors: List[Distribution],
                         K: int, stopCriterionInit, stopCriterionEM,
                         stopCriterionBCD, doRescale: bool,
@@ -372,8 +381,9 @@ class TensorFactorisation(object):
                     initPriors.append(NnUniform())
                 else:
                     initPriors.append(Uniform())
-            tefaInit = cls.__model(priorTypes=initPriors, K=K, M=M,
+            tefaInit = cls.__model(data=data, priorTypes=initPriors, K=K, M=M,
                                    trainsetProb=trainsetProb,
+                                   isFullyObserved=isFullyObserved,
                                    stopCriterion=stopCriterionInit,
                                    dtype=dtype, reuse=False,
                                    transform=transform,
@@ -381,8 +391,9 @@ class TensorFactorisation(object):
                                    suffix="init")
 
             # EM model
-            tefaEM = cls.__model(priorTypes=priors, K=K, M=M,
+            tefaEM = cls.__model(data=data, priorTypes=priors, K=K, M=M,
                                  trainsetProb=trainsetProb,
+                                 isFullyObserved=isFullyObserved,
                                  stopCriterion=stopCriterionEM,
                                  dtype=dtype, phase=Phase.EM,
                                  transform=transform,
@@ -390,18 +401,28 @@ class TensorFactorisation(object):
                                  doRescale=doRescale)
 
             # BCD model
-            tefaBCD = cls.__model(priorTypes=priors, K=K, M=M,
+            tefaBCD = cls.__model(data=data, priorTypes=priors, K=K, M=M,
                                   trainsetProb=trainsetProb,
+                                  isFullyObserved=isFullyObserved,
                                   stopCriterion=stopCriterionBCD,
                                   dtype=dtype, phase=Phase.BCD,
                                   transform=transform,
                                   reuse=tf.AUTO_REUSE,
                                   doRescale=doRescale)
-            loss = tefaBCD.loss(data)
+
+            # replace nan with zeros
+            data = tf.where(tf.is_nan(data), tf.zeros_like(data), data)
 
             # conduct an update depending on the current phase
             stopVarInit = tefaInit.stopCriterion.stopVar
             stopVarEm = tefaEM.stopCriterion.stopVar
+            loss = tf.cond(tf.logical_not(stopVarInit),
+                           lambda: tefaInit.loss(X=data),
+                           lambda: tf.cond(tf.logical_not(stopVarEm),
+                                           lambda: tefaEM.loss(X=data),
+                                           lambda: tefaBCD.loss(X=data)))
+
+            # conduct an update depending on the current phase
             deps = tf.cond(tf.logical_not(stopVarInit),
                            lambda: tefaInit.update(X=data),
                            lambda: tf.cond(tf.logical_not(stopVarEm),
@@ -432,6 +453,7 @@ class TensorFactorisation(object):
     @classmethod
     def getEstimator(cls, priors: Tuple[Distribution, ...], K: int,
                      dtype: tf.DType = tf.float32, trainsetProb: float = 1.,
+                     isFullyObserved: bool = True,
                      stopCriterionInit=LlhStall(10),
                      stopCriterionEM=LlhStall(100),
                      stopCriterionBCD=LlhImprovementThreshold(1e-2),
@@ -441,6 +463,7 @@ class TensorFactorisation(object):
         def model_fn(features, labels, mode):
             es = cls.__estimatorSpec(mode=mode, features=features,
                                      trainsetProb=trainsetProb,
+                                     isFullyObserved=isFullyObserved,
                                      device=device, priors=priors,
                                      stopCriterionInit=stopCriterionInit,
                                      stopCriterionEM=stopCriterionEM,
@@ -477,6 +500,7 @@ class TensorFactorisation(object):
         def model_fn(features, labels, mode):
             es = cls.__estimatorSpec(mode=mode, features=features,
                                      trainsetProb=1.,
+                                     isFullyObserved=True,
                                      device=device, priors=priors,
                                      stopCriterionInit=stopCriterionInit,
                                      stopCriterionEM=stopCriterionEM,

@@ -2,6 +2,7 @@ import numpy as np
 from typing import Tuple, List, Dict, Any
 import tensorflow as tf
 from tensorflow import Tensor
+import string
 
 from decompose.distributions.distribution import Distribution
 from decompose.distributions.distribution import DrawType, UpdateType
@@ -11,7 +12,7 @@ from decompose.likelihoods.likelihood import NormalLikelihood, LhU
 from decompose.distributions.distribution import Properties
 
 
-class CVNormal2dLikelihood(NormalLikelihood):
+class CVNormalNdLikelihood(NormalLikelihood):
 
     def __init__(self, M: Tuple[int, ...], K: int=1, tau: float = 1./1e10,
                  trainsetProb: float = 0.8,
@@ -34,7 +35,7 @@ class CVNormal2dLikelihood(NormalLikelihood):
 
     @staticmethod
     def type():
-        return(CVNormal2dLikelihood)
+        return(CVNormalNdLikelihood)
 
     def init(self, data: Tensor) -> None:
         tau = self.__tauInit
@@ -43,7 +44,6 @@ class CVNormal2dLikelihood(NormalLikelihood):
         noiseDistribution = CenNormal(tau=tf.constant([tau], dtype=dtype),
                                       properties=properties)
         self.__noiseDistribution = noiseDistribution
-
         observedMask = tf.logical_not(tf.is_nan(data))
         trainsetProb = self.__trainsetProb
         r = tf.distributions.Uniform().sample(sample_shape=self.M)
@@ -78,9 +78,10 @@ class CVNormal2dLikelihood(NormalLikelihood):
         return(self.testResiduals(U, X))
 
     def testResiduals(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
-        assert(len(U) == 2)
-        U0, U1 = U
-        Xhat = tf.matmul(tf.transpose(U0), U1)
+        F = len(U)
+        axisIds = string.ascii_lowercase[:F]
+        subscripts = f'k{",k".join(axisIds)}->{axisIds}'
+        Xhat = tf.einsum(subscripts, *U)
         residuals = tf.reshape(X-Xhat, (-1,))
         indices = tf.cast(tf.where(tf.reshape(self.testMask, (-1,))),
                           dtype=tf.int32)
@@ -88,9 +89,10 @@ class CVNormal2dLikelihood(NormalLikelihood):
         return(testResiduals)
 
     def trainResiduals(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
-        assert(len(U) == 2)
-        U0, U1 = U
-        Xhat = tf.matmul(tf.transpose(U0), U1)
+        F = len(U)
+        axisIds = string.ascii_lowercase[:F]
+        subscripts = f'k{",k".join(axisIds)}->{axisIds}'
+        Xhat = tf.einsum(subscripts, *U)
         residuals = tf.reshape(X-Xhat, (-1,))
         indices = tf.cast(tf.where(tf.reshape(self.trainMask, (-1,))),
                           dtype=tf.int32)
@@ -130,15 +132,39 @@ class Normal2dLikelihoodLhU(LhU):
         self.__g = (self.__f-1)**2
         self.__likelihood = likelihood
 
-    def prepVars(self, U: List[Tensor], X: Tensor) -> Tuple[Tensor, Tensor]:
-        U1 = self.__likelihood.lhU[self.__g].getUfRep(U[self.__g])
-        U1T = tf.transpose(U1, [1, 0])
-        X = tf.transpose(X, [self.__f, self.__g])
-        trainMask = tf.cast(self.__likelihood.trainMask, dtype=U[0].dtype)
-        mask = tf.transpose(trainMask, [self.__f, self.__g])
+    def outterTensorProduct(self, Us):
+        F = len(Us)
+        axisIds = string.ascii_lowercase[:F]
+        subscripts = f'k{",k".join(axisIds)}->{axisIds}k'
+        Xhat = tf.einsum(subscripts, *Us)
+        return(Xhat)
 
-        A = tf.matmul(X*mask, U1T)
-        B = tf.einsum("mn,in,jn->mij", mask, U1, U1)
+    def calcB(self, mask, UmfOutter, f, F):
+        axisIds0 = (string.ascii_lowercase[:f]
+                    + "x"
+                    + string.ascii_lowercase[f:F-1])
+        axisIds1 = string.ascii_lowercase[:F-1] + "y"
+        axisIds2 = string.ascii_lowercase[:F-1] + "z"
+        subscripts = (axisIds0 + ","
+                      + axisIds1 + ","
+                      + axisIds2 + "->"
+                      + "xyz")
+        B = tf.einsum(subscripts, mask, UmfOutter, UmfOutter)
+        return(B)
+
+    def prepVars(self, U: List[Tensor], X: Tensor) -> Tuple[Tensor, Tensor]:
+        f = self.__f
+        F = len(U)
+
+        Umf = [U[g] for g in range(F) if g != f]
+        UmfOutter = self.outterTensorProduct(Umf)
+
+        rangeFm1 = list(range(F-1))
+        mask = tf.cast(self.__likelihood.trainMask, dtype=U[0].dtype)
+        A = tf.tensordot(X*mask, UmfOutter,
+                         axes=([g for g in range(F) if g != f], rangeFm1))
+
+        B = self.calcB(mask, UmfOutter, f, F)
         return(A, B)
 
     def lhUfk(self, U: List[Tensor],
