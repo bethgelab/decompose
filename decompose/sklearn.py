@@ -157,7 +157,7 @@ class DECOMPOSE(object):
     def transform(self, X: np.ndarray,
                   transformModelDirectory: str) -> np.ndarray:
         # create input_fn
-        x = {"test": X}
+        x = {"test": X.astype(self.__dtype)}
         input_fn = tf.estimator.inputs.numpy_input_fn(
             x, y=None, batch_size=X.shape[0],
             shuffle=False, num_epochs=None)
@@ -166,7 +166,7 @@ class DECOMPOSE(object):
         tefaTransform = TensorFactorisation.getTransformEstimator(
             priors=self.__priors,
             K=self.n_components,
-            dtype=self.__dtype,
+            dtype=tf.as_dtype(self.__dtype),
             path=transformModelDirectory,
             chptFile=ckptFile)
         tefaTransform.train(input_fn=input_fn,

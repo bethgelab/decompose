@@ -21,6 +21,7 @@ class Normal2dLikelihood(NormalLikelihood):
         self.__dtype = dtype
         self.__properties = Properties(name='likelihood',
                                        drawType=drawType,
+                                       dtype=dtype,
                                        updateType=updateType,
                                        persistent=True)
 
