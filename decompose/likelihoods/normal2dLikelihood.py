@@ -21,6 +21,7 @@ class Normal2dLikelihood(NormalLikelihood):
         self.__dtype = dtype
         self.__properties = Properties(name='likelihood',
                                        drawType=drawType,
+                                       dtype=dtype,
                                        updateType=updateType,
                                        persistent=True)
 
@@ -29,7 +30,7 @@ class Normal2dLikelihood(NormalLikelihood):
             lhUf = Normal2dLikelihoodLhU(f, self)
             self.__lhU.append(lhUf)
 
-    def init(self) -> None:
+    def init(self, data: Tensor) -> None:
         tau = self.__tauInit
         dtype = self.__dtype
         properties = self.__properties

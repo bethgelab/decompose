@@ -1,5 +1,6 @@
 from typing import Dict
 import tensorflow as tf
+import numpy as np
 from tensorflow import Tensor
 
 from decompose.distributions.algorithms import Algorithms
@@ -24,6 +25,7 @@ class ExponentialAlgorithms(Algorithms):
         beta = parameters["beta"]
         exp = tf.distributions.Exponential(rate=1./beta)
         pdf = exp.prob(value=data)
+        pdf = tf.where(tf.less(data, 0.), tf.zeros_like(pdf), pdf)
         return(pdf)
 
     @classmethod
@@ -38,6 +40,7 @@ class ExponentialAlgorithms(Algorithms):
         beta = parameters["beta"]
         exp = tf.distributions.Exponential(rate=1./beta)
         llh = exp.log_prob(value=data)
+        llh = tf.where(tf.less(data, 0.), -tf.ones_like(llh)*np.inf, llh)
         return(llh)
 
     @classmethod

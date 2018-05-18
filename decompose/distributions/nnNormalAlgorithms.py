@@ -37,9 +37,9 @@ class NnNormalAlgorithms(Algorithms):
         sigma = 1./tf.sqrt(tau)
         pdf = (1.
                / sigma
-               * norm.pdf(value=((data-mu)/sigma))
+               * norm.prob(value=((data-mu)/sigma))
                / norm.cdf(value=(mu/sigma)))
-        pdf = tf.where(tf.greater(data, 0.), pdf, tf.zeros_like(pdf))
+        pdf = tf.where(tf.less(data, 0.), tf.zeros_like(pdf), pdf)
         return(pdf)
 
     @classmethod
@@ -58,6 +58,7 @@ class NnNormalAlgorithms(Algorithms):
         llh = (- tf.log(sigma)
                + norm.log_prob(value=((data-mu)/sigma))
                - norm.log_cdf(value=(mu/sigma)))
+        llh = tf.where(tf.less(data, 0.), -tf.ones_like(llh)*np.inf, llh)
         return(llh)
 
     @classmethod

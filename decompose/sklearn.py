@@ -20,14 +20,16 @@ class DECOMPOSE(object):
                  priors: Tuple[Distribution, ...] = (CenNormal(), CenNormal()),
                  n_components: int = 3,
                  trainsetProb: float = 1.,
+                 isFullyObserved: bool = True,
                  dtype: type = np.float32,
                  maxIterations: int = 100000,
                  doRescale: bool = True,
-                 stopCriterionInit: StopCriterion = LlhStall(10),
+                 stopCriterionInit: StopCriterion = LlhStall(100),
                  stopCriterionEM: StopCriterion = LlhStall(100),
                  stopCriterionBCD: StopCriterion = LlhImprovementThreshold(.1),
                  device: str = "/cpu:0") -> None:
         self.__trainsetProb = trainsetProb
+        self.__isFullyObserved = isFullyObserved
         self.__maxIterations = maxIterations
         self.__n_components = n_components
         self.__priors = priors
@@ -35,10 +37,14 @@ class DECOMPOSE(object):
         self.__modelDirectory = modelDirectory
         self.__device = device
         self.__doRescale = doRescale
+        self.__stopCriterionInit = stopCriterionInit
+        self.__stopCriterionEM = stopCriterionEM
+        self.__stopCriterionBCD = stopCriterionBCD
         tefa = TensorFactorisation.getEstimator(
             priors=priors,
             K=self.n_components,
             trainsetProb=trainsetProb,
+            isFullyObserved=isFullyObserved,
             dtype=tf.as_dtype(dtype),
             path=modelDirectory,
             doRescale=doRescale,
@@ -69,8 +75,16 @@ class DECOMPOSE(object):
         return(self.__variance_ratio)
 
     @property
-    def mask(self) -> np.ndarray:
-        return(self.__mask)
+    def trainMask(self) -> np.ndarray:
+        return(self.__trainMask)
+
+    @property
+    def testMask(self) -> np.ndarray:
+        return(self.__testMask)
+
+    @property
+    def observedMask(self) -> np.ndarray:
+        return(self.__observedMask)
 
     def __calc_variance_ratio(self, data, U):
         varData = np.var(data)
@@ -109,13 +123,31 @@ class DECOMPOSE(object):
         Us = tuple(UsList)
         self.__variance_ratio = self.__calc_variance_ratio(X, Us)
         self.__components_ = Us[1:]
-        if self.__trainsetProb < 1.:
-            self.__mask = ckptReader.get_tensor("dataMask")
 
+        # store the masks
+        if not self.__isFullyObserved:
+            self.__observedMask = np.logical_not(np.isnan(X))
+        else:
+            self.__observedMask = np.ones_like(X)
+        if self.__trainsetProb < 1.:
+            trainMask = ckptReader.get_tensor("trainMask")
+            self.__trainMask = np.logical_and(self.__observedMask,
+                                              trainMask)
+        else:
+            self.__trainMask = self.__observedMask
+
+        self.__testMask = np.logical_not(self.__trainMask)
+
+        # store all parameters of the model
         variables = tf.contrib.framework.list_variables(ckptFile)
         self.parameters = {}  # type: Dict[str, np.ndarray]
         for variableName, _ in variables:
             self.parameters[variableName] = ckptReader.get_tensor(variableName)
+
+        # store the likelihood and loss
+        self.llh = ckptReader.get_tensor("llh/llh")
+        self.loss = ckptReader.get_tensor("loss/loss")
+
         return(self)
 
     def fit_transform(self, X: np.ndarray) -> np.ndarray:
@@ -128,7 +160,7 @@ class DECOMPOSE(object):
     def transform(self, X: np.ndarray,
                   transformModelDirectory: str) -> np.ndarray:
         # create input_fn
-        x = {"test": X}
+        x = {"test": X.astype(self.__dtype)}
         input_fn = tf.estimator.inputs.numpy_input_fn(
             x, y=None, batch_size=X.shape[0],
             shuffle=False, num_epochs=None)
@@ -137,9 +169,12 @@ class DECOMPOSE(object):
         tefaTransform = TensorFactorisation.getTransformEstimator(
             priors=self.__priors,
             K=self.n_components,
-            dtype=self.__dtype,
+            dtype=tf.as_dtype(self.__dtype),
             path=transformModelDirectory,
-            chptFile=ckptFile)
+            chptFile=ckptFile,
+            stopCriterionInit=self.__stopCriterionInit,
+            stopCriterionEM=self.__stopCriterionEM,
+            stopCriterionBCD=self.__stopCriterionBCD)
         tefaTransform.train(input_fn=input_fn,
                             steps=self.__maxIterations,
                             hooks=[StopHook()])

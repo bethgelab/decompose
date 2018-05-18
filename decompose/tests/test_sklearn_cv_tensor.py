@@ -25,25 +25,32 @@ def test_sklearn_cv(tmpdir):
     modelDirectory = str(tmpdir.mkdir("model"))
 
     # create a synthetic low rank dataset
-    K, M_train, M_test = 3, [500, 100], [200, 100]
+    K, M_train, M_test = 3, [30, 100, 150], [200, 100, 150]
     lrData = LowRank(rank=K, M_train=M_train, M_test=M_test)
 
     # instantiate a model
-    priors, K, dtype = [CenNormal(), CenNormal()], K, np.float32
+    priors, K, dtype = [CenNormal(), CenNormal(), CenNormal()], K, np.float32
     model = DECOMPOSE(modelDirectory, priors=priors, n_components=K,
+                      isFullyObserved=False,
                       trainsetProb=0.8, dtype=dtype)
 
-    # train the model
-    U0 = model.fit_transform(lrData.training)
+    # mark 20% of the elments as unobserved
+    data = lrData.training.copy()
+    r = np.random.random(data.shape) > 0.8
+    data[r] = np.nan
 
-    # get mask marking the training set
+    # train the model
+    U0 = model.fit_transform(data)
+
+    # get mask marking the test set
     testMask = model.testMask
 
-    # check whether variance explained is between 0.95 and 1.
-    U1 = model.components_
+    # # check whether variance explained is between 0.95 and 1.
+    U1, U2 = model.components_
     testIndexes = testMask.flatten()
-    testResiduals = (np.dot(U0.T, U1) - lrData.training).flatten()[testIndexes]
+    recons = np.einsum("ka,kb,kc->abc", U0, U1, U2)
+    testResiduals = (recons - lrData.training).flatten()[testIndexes]
     testData = lrData.training.flatten()[testIndexes]
     testVarExpl = 1. - np.var(testResiduals)/np.var(testData)
-    print("testVarExpl", testVarExpl)
-    assert(0.95 <= lrData.var_expl_training((U0, U1)) <= 1.)
+    assert(0.95 <= testVarExpl <= 1.)
+    assert(0.95 <= lrData.var_expl_training((U0, U1, U2)) <= 1.)

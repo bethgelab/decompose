@@ -28,8 +28,7 @@ class LlhStall(StopCriterion):
         llhsVar = self.llhsVar
         llhsUpdated = tf.concat((llh[None], llhsVar[1:]), axis=0)
         llhsUpdated = tf.manip.roll(llhsUpdated, shift=1, axis=0)
-        cond = tf.reduce_all(tf.greater(llhsUpdated[0], llhsUpdated[1:]))
-
+        cond = tf.reduce_all(tf.greater_equal(llhsUpdated[0], llhsUpdated[1:]))
         u0 = tf.assign(self.stopVar, cond)
         with tf.control_dependencies([u0]):
             u1 = tf.assign(self.llhsVar, llhsUpdated)

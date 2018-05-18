@@ -46,7 +46,7 @@ class Likelihood(metaclass=ABCMeta):
         ...
 
     @abstractmethod
-    def init(self) -> None:
+    def init(self, data: Tensor) -> None:
         ...
 
     @abstractmethod

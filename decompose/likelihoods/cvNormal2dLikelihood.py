@@ -36,7 +36,7 @@ class CVNormal2dLikelihood(NormalLikelihood):
     def type():
         return(CVNormal2dLikelihood)
 
-    def init(self) -> None:
+    def init(self, data: Tensor) -> None:
         tau = self.__tauInit
         dtype = self.__dtype
         properties = self.__properties
@@ -44,35 +44,46 @@ class CVNormal2dLikelihood(NormalLikelihood):
                                       properties=properties)
         self.__noiseDistribution = noiseDistribution
 
+        observedMask = tf.logical_not(tf.is_nan(data))
         trainsetProb = self.__trainsetProb
         r = tf.distributions.Uniform().sample(sample_shape=self.M)
-        maskTensor = tf.cast(tf.less(r, trainsetProb), dtype=self.__dtype)
-        mask = tf.get_variable("dataMask", dtype=self.__dtype,
-                               initializer=maskTensor)
-        self.__mask = mask
+        trainMask = tf.less(r, trainsetProb)
+        trainMask = tf.get_variable("trainMask",
+                                    dtype=trainMask.dtype,
+                                    initializer=trainMask)
+        trainMask = tf.logical_and(trainMask, observedMask)
+        testMask = tf.logical_and(observedMask,
+                                  tf.logical_not(trainMask))
+        self.__observedMask = observedMask
+        self.__trainMask = trainMask
+        self.__testMask = testMask
 
     @property
-    def mask(self) -> Tensor:
-        return(self.__mask)
+    def observedMask(self) -> Tensor:
+        return(self.__observedMask)
+
+    @property
+    def trainMask(self) -> Tensor:
+        return(self.__trainMask)
+
+    @property
+    def testMask(self) -> Tensor:
+        return(self.__testMask)
 
     @property
     def noiseDistribution(self) -> CenNormal:
         return(self.__noiseDistribution)
 
     def residuals(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
-        assert(len(U) == 2)
-        U0, U1 = U
-        Xhat = tf.matmul(tf.transpose(U0), U1)
-        residuals = X-Xhat
-        return(residuals)
+        return(self.testResiduals(U, X))
 
     def testResiduals(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
         assert(len(U) == 2)
         U0, U1 = U
         Xhat = tf.matmul(tf.transpose(U0), U1)
         residuals = tf.reshape(X-Xhat, (-1,))
-        mask = tf.equal(tf.reshape(self.__mask, (-1,)), 0.)
-        indices = tf.cast(tf.where(mask), dtype=tf.int32)
+        indices = tf.cast(tf.where(tf.reshape(self.testMask, (-1,))),
+                          dtype=tf.int32)
         testResiduals = tf.gather_nd(residuals, indices)
         return(testResiduals)
 
@@ -81,8 +92,8 @@ class CVNormal2dLikelihood(NormalLikelihood):
         U0, U1 = U
         Xhat = tf.matmul(tf.transpose(U0), U1)
         residuals = tf.reshape(X-Xhat, (-1,))
-        mask = tf.equal(tf.reshape(self.__mask, (-1,)), 1.)
-        indices = tf.cast(tf.where(mask), dtype=tf.int32)
+        indices = tf.cast(tf.where(tf.reshape(self.trainMask, (-1,))),
+                          dtype=tf.int32)
         trainResiduals = tf.gather_nd(residuals, indices)
         return(trainResiduals)
 
@@ -123,7 +134,8 @@ class Normal2dLikelihoodLhU(LhU):
         U1 = self.__likelihood.lhU[self.__g].getUfRep(U[self.__g])
         U1T = tf.transpose(U1, [1, 0])
         X = tf.transpose(X, [self.__f, self.__g])
-        mask = tf.transpose(self.__likelihood.mask, [self.__f, self.__g])
+        trainMask = tf.cast(self.__likelihood.trainMask, dtype=U[0].dtype)
+        mask = tf.transpose(trainMask, [self.__f, self.__g])
 
         A = tf.matmul(X*mask, U1T)
         B = tf.einsum("mn,in,jn->mij", mask, U1, U1)
