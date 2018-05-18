@@ -24,7 +24,7 @@ class DECOMPOSE(object):
                  dtype: type = np.float32,
                  maxIterations: int = 100000,
                  doRescale: bool = True,
-                 stopCriterionInit: StopCriterion = LlhStall(10),
+                 stopCriterionInit: StopCriterion = LlhStall(100),
                  stopCriterionEM: StopCriterion = LlhStall(100),
                  stopCriterionBCD: StopCriterion = LlhImprovementThreshold(.1),
                  device: str = "/cpu:0") -> None:
@@ -37,6 +37,9 @@ class DECOMPOSE(object):
         self.__modelDirectory = modelDirectory
         self.__device = device
         self.__doRescale = doRescale
+        self.__stopCriterionInit = stopCriterionInit
+        self.__stopCriterionEM = stopCriterionEM
+        self.__stopCriterionBCD = stopCriterionBCD
         tefa = TensorFactorisation.getEstimator(
             priors=priors,
             K=self.n_components,
@@ -168,7 +171,10 @@ class DECOMPOSE(object):
             K=self.n_components,
             dtype=tf.as_dtype(self.__dtype),
             path=transformModelDirectory,
-            chptFile=ckptFile)
+            chptFile=ckptFile,
+            stopCriterionInit=self.__stopCriterionInit,
+            stopCriterionEM=self.__stopCriterionEM,
+            stopCriterionBCD=self.__stopCriterionBCD)
         tefaTransform.train(input_fn=input_fn,
                             steps=self.__maxIterations,
                             hooks=[StopHook()])
