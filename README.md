@@ -2,7 +2,7 @@
 Blind source separation based on the probabilistic tensor factorisation framework
 
 ## Installation
-Decompose demands python 3.6 and tensorflow 1.7. The newest gibhub code of decompose can be installed using pip:
+Decompose demands python 3.6 and tensorflow 1.7. The newest github code of decompose can be installed using pip:
 ```bash
 pip3 install git+https://github.com/bethgelab/decompose
 ```
