@@ -10,17 +10,18 @@ from decompose.distributions.cenNormal import CenNormal
 from decompose.distributions.normal import Normal
 from decompose.likelihoods.likelihood import NormalLikelihood, LhU
 from decompose.distributions.distribution import Properties
+from decompose.cv.cv import CV
 
 
 class CVNormalNdLikelihood(NormalLikelihood):
 
     def __init__(self, M: Tuple[int, ...], K: int=1, tau: float = 1./1e10,
-                 trainsetProb: float = 0.8,
+                 cv: CV = None,
                  drawType: DrawType = DrawType.SAMPLE,
                  updateType: UpdateType = UpdateType.ALL,
                  dtype=tf.float32) -> None:
         NormalLikelihood.__init__(self, M, K)
-        self.__trainsetProb = trainsetProb
+        self.__cv = cv
         self.__tauInit = tau
         self.__dtype = dtype
         self.__properties = Properties(name='likelihood',
@@ -45,9 +46,7 @@ class CVNormalNdLikelihood(NormalLikelihood):
                                       properties=properties)
         self.__noiseDistribution = noiseDistribution
         observedMask = tf.logical_not(tf.is_nan(data))
-        trainsetProb = self.__trainsetProb
-        r = tf.distributions.Uniform().sample(sample_shape=self.M)
-        trainMask = tf.less(r, trainsetProb)
+        trainMask = tf.logical_not(self.cv.mask(X=data))
         trainMask = tf.get_variable("trainMask",
                                     dtype=trainMask.dtype,
                                     initializer=trainMask)
@@ -57,6 +56,10 @@ class CVNormalNdLikelihood(NormalLikelihood):
         self.__observedMask = observedMask
         self.__trainMask = trainMask
         self.__testMask = testMask
+
+    @property
+    def cv(self) -> CV:
+        return(self.__cv)
 
     @property
     def observedMask(self) -> Tensor:
@@ -100,9 +103,8 @@ class CVNormalNdLikelihood(NormalLikelihood):
         return(trainResiduals)
 
     def llh(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
-        testsetProb = 1. - self.__trainsetProb
         r = self.testResiduals(U, X)
-        llh = tf.reduce_sum(self.noiseDistribution.llh(r))/testsetProb
+        llh = tf.reduce_sum(self.noiseDistribution.llh(r))
         return(llh)
 
     def loss(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:

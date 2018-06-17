@@ -18,6 +18,7 @@ from decompose.likelihoods.cvNormalNdLikelihood import CVNormalNdLikelihood
 from decompose.postU.postU import PostU
 from decompose.stopCriterions.llhImprovementThreshold import LlhImprovementThreshold
 from decompose.stopCriterions.llhStall import LlhStall
+from decompose.cv.cv import CV
 
 
 EstimatorSpec = tf.estimator.EstimatorSpec
@@ -300,8 +301,9 @@ class TensorFactorisation(object):
     def __model(cls, data: Tensor, priorTypes: List[Distribution],
                 M: Tuple[int, ...],
                 K: int, stopCriterion, phase: Phase, dtype: tf.DType,
-                reuse=False, trainsetProb: float = 1.,
+                reuse=False,
                 isFullyObserved: bool = True,
+                cv: CV = None,
                 doRescale: bool = True, transform: bool = False,
                 suffix: str = "") -> "TensorFactorisation":
         varscope = "stopCriterion" + phase.name
@@ -309,19 +311,19 @@ class TensorFactorisation(object):
         F = len(priorTypes)
         with tf.variable_scope("", reuse=reuse):
             if F == 2:
-                if trainsetProb == 1. and isFullyObserved:
+                if cv is None and isFullyObserved:
                     likelihood = Normal2dLikelihood(
                         M=M, K=K, dtype=dtype)  # type: Likelihood
                 else:
                     likelihood = CVNormal2dLikelihood(
-                        M=M, K=K, dtype=dtype, trainsetProb=trainsetProb)
+                        M=M, K=K, cv=cv, dtype=dtype)
             else:
-                if trainsetProb == 1. and isFullyObserved:
+                if cv is None and isFullyObserved:
                     likelihood = NormalNdLikelihood(
                         M=M, K=K, dtype=dtype)
                 else:
                     likelihood = CVNormalNdLikelihood(
-                        M=M, K=K, dtype=dtype, trainsetProb=trainsetProb)
+                        M=M, K=K, cv=cv, dtype=dtype)
             likelihood.init(data)
             priors = []
             for f, priorType in enumerate(priorTypes):
@@ -336,11 +338,11 @@ class TensorFactorisation(object):
 
     @classmethod
     def __estimatorSpec(cls, mode, features, device: str,
-                        trainsetProb: float,
                         isFullyObserved: bool,
                         priors: List[Distribution],
                         K: int, stopCriterionInit, stopCriterionEM,
                         stopCriterionBCD, doRescale: bool,
+                        cv: CV,
                         transform: bool, dtype: tf.DType) -> EstimatorSpec:
         # PREDICT and EVAL are not supported
         if mode != tf.estimator.ModeKeys.TRAIN:
@@ -382,31 +384,28 @@ class TensorFactorisation(object):
                 else:
                     initPriors.append(Uniform())
             tefaInit = cls.__model(data=data, priorTypes=initPriors, K=K, M=M,
-                                   trainsetProb=trainsetProb,
                                    isFullyObserved=isFullyObserved,
                                    stopCriterion=stopCriterionInit,
                                    dtype=dtype, reuse=False,
-                                   transform=transform,
+                                   transform=transform, cv=cv,
                                    doRescale=doRescale, phase=Phase.INIT,
                                    suffix="init")
 
             # EM model
             tefaEM = cls.__model(data=data, priorTypes=priors, K=K, M=M,
-                                 trainsetProb=trainsetProb,
                                  isFullyObserved=isFullyObserved,
                                  stopCriterion=stopCriterionEM,
                                  dtype=dtype, phase=Phase.EM,
-                                 transform=transform,
+                                 transform=transform, cv=cv,
                                  reuse=tf.AUTO_REUSE,
                                  doRescale=doRescale)
 
             # BCD model
             tefaBCD = cls.__model(data=data, priorTypes=priors, K=K, M=M,
-                                  trainsetProb=trainsetProb,
                                   isFullyObserved=isFullyObserved,
                                   stopCriterion=stopCriterionBCD,
                                   dtype=dtype, phase=Phase.BCD,
-                                  transform=transform,
+                                  transform=transform, cv=cv,
                                   reuse=tf.AUTO_REUSE,
                                   doRescale=doRescale)
 
@@ -452,22 +451,23 @@ class TensorFactorisation(object):
 
     @classmethod
     def getEstimator(cls, priors: Tuple[Distribution, ...], K: int,
-                     dtype: tf.DType = tf.float32, trainsetProb: float = 1.,
+                     dtype: tf.DType = tf.float32,
                      isFullyObserved: bool = True,
                      stopCriterionInit=LlhStall(10),
                      stopCriterionEM=LlhStall(100),
                      stopCriterionBCD=LlhImprovementThreshold(1e-2),
                      path: str = "/tmp", device: str = "/cpu:0",
+                     cv: CV = None,
                      doRescale: bool = True):
 
         def model_fn(features, labels, mode):
             es = cls.__estimatorSpec(mode=mode, features=features,
-                                     trainsetProb=trainsetProb,
                                      isFullyObserved=isFullyObserved,
                                      device=device, priors=priors,
                                      stopCriterionInit=stopCriterionInit,
                                      stopCriterionEM=stopCriterionEM,
                                      stopCriterionBCD=stopCriterionBCD,
+                                     cv=cv,
                                      doRescale=doRescale, K=K,
                                      transform=False, dtype=dtype)
             return(es)
@@ -499,13 +499,12 @@ class TensorFactorisation(object):
 
         def model_fn(features, labels, mode):
             es = cls.__estimatorSpec(mode=mode, features=features,
-                                     trainsetProb=1.,
                                      isFullyObserved=True,
                                      device=device, priors=priors,
                                      stopCriterionInit=stopCriterionInit,
                                      stopCriterionEM=stopCriterionEM,
                                      stopCriterionBCD=stopCriterionBCD,
-                                     doRescale=doRescale, K=K,
+                                     doRescale=doRescale, K=K, cv=None,
                                      transform=True, dtype=dtype)
             return(es)
 
