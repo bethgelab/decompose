@@ -61,8 +61,8 @@ class LomaxAlgorithms(Algorithms):
             maxWidths = tf.gather(swidths, argmax)
             beta = beta+maxWidths*normedDirection
 
-            beta = tf.where(tf.greater(beta, 1.), beta,
-                            1.*tf.ones_like(beta))
+            beta = tf.where(tf.greater(beta, 1e-9), beta,
+                            1e-9*tf.ones_like(beta))
             beta = tf.where(tf.less(beta, 1e9), beta,
                             1e9*tf.ones_like(beta))
 
