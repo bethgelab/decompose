@@ -280,6 +280,27 @@ class TensorFactorisation(object):
         llh = tf.cast(llh, tf.float64)
         return(llh)
 
+    def llhIndividual(self, X: Tensor) -> Tensor:
+        """Log likelihood of the parameters given data `X`."""
+
+        # log likelihood of the noise
+        llhRes = self.likelihood.llh(self.U, X)
+        llh = llhRes
+
+        # log likelihood of the factors
+        llhU = []
+        llhUfk = []
+        U = list(self.U)
+        for f, postUf in enumerate(self.postU):
+            U = self.rescale(U=U, fNonUnit=f)
+            UfT = tf.transpose(U[f])
+            llhUfk.append(tf.reduce_sum(postUf.prior.llh(UfT), axis=0))
+            llhUf = tf.reduce_sum(postUf.prior.llh(UfT))
+            llh = llh + llhUf
+            llhU.append(llhUf)
+        llh = tf.cast(llh, tf.float64)
+        return(llh, llhRes, llhU, llhUfk)
+
     @staticmethod
     def type():
         return(TensorFactorisation)
@@ -337,7 +358,7 @@ class TensorFactorisation(object):
                         priors: List[Distribution],
                         K: int, stopCriterionInit, stopCriterionEM,
                         stopCriterionBCD,
-                        cv: CV,
+                        cv: CV, path: str,
                         transform: bool, dtype: tf.DType) -> EstimatorSpec:
         # PREDICT and EVAL are not supported
         if mode != tf.estimator.ModeKeys.TRAIN:
@@ -440,7 +461,27 @@ class TensorFactorisation(object):
                 step = tf.train.get_or_create_global_step()
                 trainOp = tf.assign(step, step + 1)
 
-        return EstimatorSpec(mode, loss=loss, train_op=trainOp)
+            # log summaries
+            tf.summary.scalar("loss", loss)
+            llh = tf.cond(tf.logical_not(stopVarInit),
+                          lambda: tefaInit.llhIndividual(X=data),
+                          lambda: tf.cond(tf.logical_not(stopVarEm),
+                                          lambda: tefaEM.llhIndividual(X=data),
+                                          lambda: tefaBCD.llhIndividual(X=data)))
+            llh, llhRes, llhU, llhUfk = llh
+            tf.summary.scalar("llh", llh)
+            tf.summary.scalar("llhResiduals", llhRes)
+            for f, (llhUf, llhUfk) in enumerate(zip(llhU, llhUfk)):
+                tf.summary.scalar(f"llhU{f}", llhUf)
+
+            SAVE_EVERY_N_STEPS = 1  # TODO: make configurable
+            summary_hook = tf.train.SummarySaverHook(
+                SAVE_EVERY_N_STEPS,
+                output_dir=path,
+                summary_op=tf.summary.merge_all())
+
+        return EstimatorSpec(mode, loss=loss, train_op=trainOp,
+                             training_hooks=[summary_hook])
 
     @classmethod
     def getEstimator(cls, priors: Tuple[Distribution, ...], K: int,
@@ -459,7 +500,7 @@ class TensorFactorisation(object):
                                      stopCriterionInit=stopCriterionInit,
                                      stopCriterionEM=stopCriterionEM,
                                      stopCriterionBCD=stopCriterionBCD,
-                                     cv=cv, K=K,
+                                     cv=cv, path=path, K=K,
                                      transform=False, dtype=dtype)
             return(es)
 
@@ -494,7 +535,7 @@ class TensorFactorisation(object):
                                      stopCriterionInit=stopCriterionInit,
                                      stopCriterionEM=stopCriterionEM,
                                      stopCriterionBCD=stopCriterionBCD,
-                                     K=K, cv=None,
+                                     K=K, path=path, cv=None,
                                      transform=True, dtype=dtype)
             return(es)
 
