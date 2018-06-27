@@ -5,6 +5,7 @@ import tensorflow as tf
 from tensorflow.python import pywrap_tensorflow
 
 from decompose.models.tensorFactorisation import TensorFactorisation
+from decompose.models.tensorFactorisation import NoiseUniformity
 from decompose.distributions.cenNormal import CenNormal
 from decompose.stopCriterions.stopCriterion import StopHook
 from decompose.stopCriterions.llhImprovementThreshold import LlhImprovementThreshold
@@ -12,6 +13,9 @@ from decompose.stopCriterions.llhStall import LlhStall
 from decompose.stopCriterions.stopCriterion import StopCriterion
 from decompose.distributions.distribution import Distribution
 from decompose.cv.cv import CV
+
+
+HOMOGENEOUS = NoiseUniformity.HOMOGENEOUS
 
 
 class DECOMPOSE(object):
@@ -24,6 +28,7 @@ class DECOMPOSE(object):
                  dtype: type = np.float32,
                  maxIterations: int = 100000,
                  cv: CV = None,
+                 noiseUniformity: NoiseUniformity = HOMOGENEOUS,
                  stopCriterionInit: StopCriterion = LlhStall(100),
                  stopCriterionEM: StopCriterion = LlhStall(100),
                  stopCriterionBCD: StopCriterion = LlhImprovementThreshold(.1),
@@ -36,6 +41,7 @@ class DECOMPOSE(object):
         self.__cv = cv
         self.__modelDirectory = modelDirectory
         self.__device = device
+        self.__noiseUniformity = noiseUniformity
         self.__stopCriterionInit = stopCriterionInit
         self.__stopCriterionEM = stopCriterionEM
         self.__stopCriterionBCD = stopCriterionBCD
@@ -45,12 +51,17 @@ class DECOMPOSE(object):
             isFullyObserved=isFullyObserved,
             dtype=tf.as_dtype(dtype),
             path=modelDirectory,
+            noiseUniformity=noiseUniformity,
             cv=cv,
             stopCriterionInit=stopCriterionInit,
             stopCriterionEM=stopCriterionEM,
             stopCriterionBCD=stopCriterionBCD,
             device=self.__device)
         self.__tefa = tefa
+
+    @property
+    def noiseUniformity(self) -> bool:
+        return(self.__noiseUniformity)
 
     @property
     def cv(self) -> CV:
@@ -171,6 +182,7 @@ class DECOMPOSE(object):
             dtype=tf.as_dtype(self.__dtype),
             path=transformModelDirectory,
             chptFile=ckptFile,
+            noiseUniformity=self.noiseUniformity,
             stopCriterionInit=self.__stopCriterionInit,
             stopCriterionEM=self.__stopCriterionEM,
             stopCriterionBCD=self.__stopCriterionBCD)
