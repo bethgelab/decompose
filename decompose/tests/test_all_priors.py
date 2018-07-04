@@ -57,8 +57,7 @@ def test_all_priors(tmpdir, PriorDistribution):
                                             stopCriterionBCD=NIterations(10),
                                             dtype=tf.as_dtype(dtype),
                                             path=modelDirectory,
-                                            device="/cpu:0",
-                                            doRescale=True)
+                                            device="/cpu:0")
 
     # create input_fna
     input_fn = randomData.input_fn

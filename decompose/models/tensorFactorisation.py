@@ -101,12 +101,10 @@ class TensorFactorisation(object):
                  dtype: tf.DType,
                  stopCriterion,
                  phase: Phase,
-                 doRescale: bool = True,
                  transform: bool = False) -> None:
 
         # setup the model
         self.dtype = dtype
-        self.__doRescale = doRescale
         self.__transform = transform
         self.likelihood = likelihood
         self.stopCriterion = stopCriterion
@@ -143,7 +141,6 @@ class TensorFactorisation(object):
                dtype: tf.DType,
                phase: Phase,
                stopCriterion,
-               doRescale: bool = True,
                transform: bool = False) -> "TensorFactorisation":
 
         # initialize U
@@ -163,13 +160,8 @@ class TensorFactorisation(object):
                                    dtype=dtype,
                                    phase=phase,
                                    transform=transform,
-                                   doRescale=doRescale,
                                    stopCriterion=stopCriterion)
         return(tefa)
-
-    @property
-    def doRescale(self) -> bool:
-        return(self.__doRescale)
 
     @property
     def transform(self) -> bool:
@@ -198,56 +190,56 @@ class TensorFactorisation(object):
         return(self.U)
 
     def updateTrain(self, X: Tensor) -> None:
-            # store filterbanks in a list
-            U = list(self.U)  # type: List[Tensor]
+        # store filterbanks in a list
+        U = list(self.U)  # type: List[Tensor]
 
-            # update the parameters of the likelihood
-            self.likelihood.update(U, X)
+        # update the parameters of the likelihood
+        self.likelihood.update(U=U, X=X)
 
-            # calculate updates of the filterbanks
-            for f, postUf in enumerate(self.postU):
-                U[f] = postUf.update(U, X, False)
+        # update the filters in reversed order
+        for f, postUf in reversed(list(enumerate(self.postU))):
+            U = self.rescale(U=U, fNonUnit=f)
+            U[f] = postUf.update(U=U, X=X, transform=False)
 
-                if self.doRescale:
-                    U = self.rescale(U)
-
-            # update the filter banks
-            self.U = tuple(U)
+        # update the filter banks
+        self.U = tuple(U)
 
     def updateTransform(self, X: Tensor) -> None:
-            # store filterbanks in a list
-            U = list(self.U)  # type: List[Tensor]
+        # store filterbanks in a list
+        U = list(self.U)  # type: List[Tensor]
 
-            # calculate updates of the last filterbank
-            U[0] = self.postU[0].update(U, X, True)
+        # calculate updates of the first filterbank
+        U[0] = self.postU[0].update(U=U, X=X, transform=True)
 
-            # update the filter banks
-            self.U = tuple(U)
+        # update the filter banks
+        self.U = tuple(U)
 
-    def rescale(self, U: List[Tensor]) -> List[Tensor]:
-        """Same l2 norm across all factors."""
+    def rescale(self, U: List[Tensor], fNonUnit: int) -> List[Tensor]:
+        """Puts all variance in the factor `fUpdate`-th factor.
 
+        The method assumes that the norm of all filters is larger than 0."""
         F = len(U)
-        norm = tf.ones_like(U[0][..., 0])
+
+        # calculathe the scale for each source
+        scaleOfSources = tf.ones_like(U[0][..., 0])
+        for f in range(F):
+            scaleOfSources = scaleOfSources*tf.norm(U[f], axis=-1)
 
         for f in range(F):
-            norm = norm*tf.norm(U[f], axis=-1)
-        norm = (norm)**(1./F)
+            # determine rescaling constant depending on the factor number
+            Uf = U[f]
+            normUf = tf.norm(Uf, axis=-1)
+            if f == fNonUnit:
+                # put all variance in the filters of the fUpdate-th factor
+                rescaleConstant = scaleOfSources/normUf
+            else:
+                # normalize the filters all other factors
+                rescaleConstant = 1./normUf
 
-        for f in range(F):
-            Uf = U[f]
-            normUf = tf.norm(Uf, axis=-1)
-            norm = tf.where(tf.logical_or(tf.equal(norm/normUf, 0.),
-                                          tf.logical_not(tf.is_finite(norm/normUf))),
-                            tf.zeros_like(norm), norm)
-        for f in range(F):
-            Uf = U[f]
-            normUf = tf.norm(Uf, axis=-1)
-            Uf = Uf*(norm/normUf)[..., None]
-            Uf = tf.where(tf.logical_or(tf.equal(norm/normUf, 0.),
-                                        tf.logical_not(tf.is_finite(norm/normUf))),
-                          U[f], Uf)
+            # rescaled filters
+            Uf = Uf*rescaleConstant[..., None]
             U[f] = Uf
+
         return(U)
 
     def __setEm(self) -> None:
@@ -279,8 +271,11 @@ class TensorFactorisation(object):
         llh = self.likelihood.llh(self.U, X)
 
         # log likelihood of the factors
+        U = list(self.U)
         for f, postUf in enumerate(self.postU):
-            llhUf = tf.reduce_sum(postUf.prior.llh(tf.transpose(self.U[f])))
+            U = self.rescale(U=U, fNonUnit=f)
+            UfT = tf.transpose(U[f])
+            llhUf = tf.reduce_sum(postUf.prior.llh(UfT))
             llh = llh + llhUf
         llh = tf.cast(llh, tf.float64)
         return(llh)
@@ -304,7 +299,7 @@ class TensorFactorisation(object):
                 reuse=False,
                 isFullyObserved: bool = True,
                 cv: CV = None,
-                doRescale: bool = True, transform: bool = False,
+                transform: bool = False,
                 suffix: str = "") -> "TensorFactorisation":
         varscope = "stopCriterion" + phase.name
         stopCriterion.init(ns=varscope)
@@ -332,7 +327,7 @@ class TensorFactorisation(object):
                 priors.append(prior)
         tefa = cls.random(priorU=priors, likelihood=likelihood, M=M, K=K,
                           phase=phase, stopCriterion=stopCriterion,
-                          doRescale=doRescale, dtype=dtype,
+                          dtype=dtype,
                           transform=transform)
         return(tefa)
 
@@ -341,7 +336,7 @@ class TensorFactorisation(object):
                         isFullyObserved: bool,
                         priors: List[Distribution],
                         K: int, stopCriterionInit, stopCriterionEM,
-                        stopCriterionBCD, doRescale: bool,
+                        stopCriterionBCD,
                         cv: CV,
                         transform: bool, dtype: tf.DType) -> EstimatorSpec:
         # PREDICT and EVAL are not supported
@@ -388,7 +383,7 @@ class TensorFactorisation(object):
                                    stopCriterion=stopCriterionInit,
                                    dtype=dtype, reuse=False,
                                    transform=transform, cv=cv,
-                                   doRescale=doRescale, phase=Phase.INIT,
+                                   phase=Phase.INIT,
                                    suffix="init")
 
             # EM model
@@ -397,8 +392,7 @@ class TensorFactorisation(object):
                                  stopCriterion=stopCriterionEM,
                                  dtype=dtype, phase=Phase.EM,
                                  transform=transform, cv=cv,
-                                 reuse=tf.AUTO_REUSE,
-                                 doRescale=doRescale)
+                                 reuse=tf.AUTO_REUSE)
 
             # BCD model
             tefaBCD = cls.__model(data=data, priorTypes=priors, K=K, M=M,
@@ -406,8 +400,7 @@ class TensorFactorisation(object):
                                   stopCriterion=stopCriterionBCD,
                                   dtype=dtype, phase=Phase.BCD,
                                   transform=transform, cv=cv,
-                                  reuse=tf.AUTO_REUSE,
-                                  doRescale=doRescale)
+                                  reuse=tf.AUTO_REUSE)
 
             # replace nan with zeros
             data = tf.where(tf.is_nan(data), tf.zeros_like(data), data)
@@ -457,8 +450,7 @@ class TensorFactorisation(object):
                      stopCriterionEM=LlhStall(100),
                      stopCriterionBCD=LlhImprovementThreshold(1e-2),
                      path: str = "/tmp", device: str = "/cpu:0",
-                     cv: CV = None,
-                     doRescale: bool = True):
+                     cv: CV = None):
 
         def model_fn(features, labels, mode):
             es = cls.__estimatorSpec(mode=mode, features=features,
@@ -467,8 +459,7 @@ class TensorFactorisation(object):
                                      stopCriterionInit=stopCriterionInit,
                                      stopCriterionEM=stopCriterionEM,
                                      stopCriterionBCD=stopCriterionBCD,
-                                     cv=cv,
-                                     doRescale=doRescale, K=K,
+                                     cv=cv, K=K,
                                      transform=False, dtype=dtype)
             return(es)
 
@@ -482,8 +473,7 @@ class TensorFactorisation(object):
                               stopCriterionInit=LlhStall(10),
                               stopCriterionEM=LlhStall(100),
                               stopCriterionBCD=LlhImprovementThreshold(1e-2),
-                              path: str = "/tmp", device: str = "/cpu:0",
-                              doRescale: bool = True):
+                              path: str = "/tmp", device: str = "/cpu:0"):
         # configuring warm start settings
         reader = pywrap_tensorflow.NewCheckpointReader(chptFile)
         varList = [v for v in reader.get_variable_to_shape_map().keys()
@@ -504,7 +494,7 @@ class TensorFactorisation(object):
                                      stopCriterionInit=stopCriterionInit,
                                      stopCriterionEM=stopCriterionEM,
                                      stopCriterionBCD=stopCriterionBCD,
-                                     doRescale=doRescale, K=K, cv=None,
+                                     K=K, cv=None,
                                      transform=True, dtype=dtype)
             return(es)
 

@@ -11,12 +11,11 @@ from decompose.likelihoods.likelihood import Likelihood
 class PostU(object):
 
     def __init__(self, likelihood: Likelihood, prior: Distribution,
-                 f: int, normalize: bool = False) -> None:
+                 f: int) -> None:
         self.__likelihood = likelihood
         self.__prior = prior
         self.__f = f
         self.__K = likelihood.K
-        self.__normalize = normalize
 
     def f(self) -> int:
         return(self.__f)
@@ -63,9 +62,13 @@ class PostU(object):
         Ufk = postfk.draw()
         Ufk = tf.expand_dims(Ufk, 0)
 
-        allZero = tf.reduce_all(tf.equal(Ufk, 0.))
-        isFinite = tf.reduce_all(tf.is_finite(Ufk))
-        isValid = tf.logical_and(isFinite, tf.logical_not(allZero))
+        normUfk = tf.norm(Ufk)
+        notNanNorm = tf.logical_not(tf.is_nan(normUfk))
+        finiteNorm = tf.is_finite(normUfk)
+        positiveNorm = normUfk > 0.
+        isValid = tf.logical_and(notNanNorm,
+                                 tf.logical_and(finiteNorm,
+                                                positiveNorm))
         Uf = tf.cond(isValid, lambda: self.updateUf(U[f], Ufk, k),
                      lambda: U[f])
 
