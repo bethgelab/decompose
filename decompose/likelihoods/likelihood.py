@@ -1,27 +1,10 @@
 from abc import ABCMeta, abstractmethod
-from typing import Tuple, List, Dict, Any
-from numpy import ndarray
-import numpy as np
+from typing import Tuple, List
 import tensorflow as tf
 from tensorflow import Tensor
 
-from decompose.distributions.distribution import Distribution
-
-
-class LhU(metaclass=ABCMeta):
-
-    @abstractmethod
-    def prepVars(self, U: List[Tensor], X: Tensor) -> Tuple[Tensor, Tensor]:
-        ...
-
-    @abstractmethod
-    def lhUfk(self, U: List[Tensor],
-              prepVars: Tuple[Tensor, Tensor], k: Tensor) -> Distribution:
-        ...
-
-    @abstractmethod
-    def newUfk(self, Ufk: Tensor, k: Tensor) -> None:
-        ...
+from decompose.distributions.normal import Normal
+from decompose.distributions.distribution import Distribution, Properties
 
 
 class Likelihood(metaclass=ABCMeta):
@@ -32,12 +15,34 @@ class Likelihood(metaclass=ABCMeta):
         self.__F = len(M)
 
     @abstractmethod
-    def update(self, U: Tuple[Tensor, ...], X: Tensor) -> None:
+    def prepVars(self, f: int, U: List[Tensor],
+                 X: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         ...
 
-    @property
+    def lhUfk(self, Uf: Tensor, prepVars: Tuple[Tensor, ...],
+              f: int, k: Tensor) -> Distribution:
+        XVT, VVT, alpha = prepVars
+        XvT = XVT[:, k]
+        VvT = VVT[..., k]
+        vvT = VVT[..., k, k]
+        Ufk = Uf[k]
+
+        UVvT = tf.reduce_sum(tf.transpose(Uf)*VvT, axis=-1)
+        uvvT = Ufk*vvT
+        Xtildev = XvT - UVvT + uvvT
+
+        mu = Xtildev/vvT
+        tau = vvT*alpha
+
+        properties = Properties(name=f"lhU{f}k",
+                                drawType=self.noiseDistribution.drawType,
+                                updateType=self.noiseDistribution.updateType,
+                                persistent=False)
+        lhUfk = Normal(mu=mu, tau=tau, properties=properties)
+        return(lhUfk)
+
     @abstractmethod
-    def lhU(self) -> List["LhU"]:
+    def update(self, U: Tuple[Tensor, ...], X: Tensor) -> None:
         ...
 
     @property
@@ -75,9 +80,3 @@ class Likelihood(metaclass=ABCMeta):
         K = str(self.K)
         id = likelihoodName + K
         return(id)
-
-
-class NormalLikelihood(Likelihood):
-    @abstractmethod
-    def alpha(self) -> Tensor:
-        ...

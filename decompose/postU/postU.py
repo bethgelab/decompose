@@ -1,10 +1,8 @@
 from typing import Tuple, List
-import numpy as np
 from tensorflow import Tensor
 import tensorflow as tf
 
 from decompose.distributions.distribution import Distribution
-from decompose.distributions.distribution import DrawType
 from decompose.likelihoods.likelihood import Likelihood
 
 
@@ -37,7 +35,7 @@ class PostU(object):
         else:
             self.prior.fitLatents(data=tf.transpose(U[f]))
 
-        prepVars = self.__likelihood.lhU[f].prepVars(U, X)
+        prepVars = self.__likelihood.prepVars(f=f, U=U, X=X)
 
         def cond(k, Uf):
             return(tf.less(k, K))
@@ -57,7 +55,7 @@ class PostU(object):
 
         UfShape = U[f].get_shape()
 
-        lhUfk = self.__likelihood.lhU[f].lhUfk(U, prepVars, k)
+        lhUfk = self.__likelihood.lhUfk(U[f], prepVars, f, k)
         postfk = lhUfk*self.prior[k].cond()
         Ufk = postfk.draw()
         Ufk = tf.expand_dims(Ufk, 0)
