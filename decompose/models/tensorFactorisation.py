@@ -167,7 +167,11 @@ class TensorFactorisation(object):
         F = len(M)
         U = []
         for f in range(F):
-            U.append(normal.sample(sample_shape=(K, M[f])))
+            if priorU[f].nonNegative:
+                UfInit = tf.abs(normal.sample(sample_shape=(K, M[f])))
+            else:
+                UfInit = normal.sample(sample_shape=(K, M[f]))
+            U.append(UfInit)
 
         # instantiate
         tefa = TensorFactorisation(U=U,
