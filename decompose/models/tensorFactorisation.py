@@ -357,17 +357,20 @@ class TensorFactorisation(object):
             F == 2
             and cv is None
             and isFullyObserved
-            and noiseUniformity == HOMOGENEOUS)
+            and (noiseUniformity == HOMOGENEOUS
+                 or phase == Phase.INIT))
         useAllSpecificNormal2dLikelihood = (
             F == 2
             and cv is None
             and isFullyObserved
-            and noiseUniformity == HETEROGENEOUS)
+            and noiseUniformity == HETEROGENEOUS
+            and phase != Phase.INIT)
         useSpecificNormal2dLikelihood = (
             F == 2
             and cv is None
             and isFullyObserved
-            and noiseUniformity == LAST_FACTOR_HETEROGENOUS)
+            and noiseUniformity == LAST_FACTOR_HETEROGENOUS
+            and phase != Phase.INIT)
         useCVNormal2dLikelihood = (
             F == 2
             and (cv is not None
@@ -385,7 +388,7 @@ class TensorFactorisation(object):
             and noiseUniformity == HOMOGENEOUS)
 
         # instantiate the likelihood
-        with tf.variable_scope("", reuse=reuse):
+        with tf.variable_scope(f"{suffix}", reuse=reuse):
             if useNormal2dLikelihood:
                 likelihood = Normal2dLikelihood(
                     M=M, K=K, dtype=dtype)  # type: Likelihood
