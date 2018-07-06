@@ -1,7 +1,6 @@
 import pytest
 import numpy as np
 import tensorflow as tf
-from tensorflow.python import pywrap_tensorflow
 from decompose.distributions.cenNormal import CenNormal
 from decompose.sklearn import DECOMPOSE
 from decompose.data.lowRank import LowRank
