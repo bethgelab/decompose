@@ -7,13 +7,13 @@ from decompose.distributions.distribution import ParameterInfo
 from decompose.distributions.distribution import parameterProperty
 from decompose.distributions.normal import Normal
 from decompose.distributions.algorithms import Algorithms
-from decompose.distributions.cenNormalRankOneHeuristicAlgorithms import CenNormalRankOneHeuristicAlgorithms
+from decompose.distributions.cenNormalRankOneAlgorithms import CenNormalRankOneAlgorithms
 from decompose.distributions.distribution import Properties
 
 
 class CenNormalRankOne(Normal):
     def __init__(self,
-                 algorithms: Type[Algorithms] = CenNormalRankOneHeuristicAlgorithms,
+                 algorithms: Type[Algorithms] = CenNormalRankOneAlgorithms,
                  tau0: Tensor = None,
                  tau1: Tensor = None,
                  properties: Properties = None) -> None:
