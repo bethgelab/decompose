@@ -42,11 +42,12 @@ class LomaxAlgorithms(Algorithms):
     @classmethod
     def fit(cls, parameters: Dict[str, Tensor],
             data: tf.Tensor) -> Dict[str, Tensor]:
-        alpha, beta = parameters["alpha"], parameters["beta"]
+        alphaOld, betaOld = parameters["alpha"], parameters["beta"]
 
         y = data
         tn = data.get_shape()[0].value
-        beta = beta
+        alpha = alphaOld
+        beta = betaOld
 
         for i in range(1):
             swidths = tf.constant(np.array([0., 1e-8, 1e-7, 1e-6, 1e-4, 1e-3,
@@ -72,6 +73,16 @@ class LomaxAlgorithms(Algorithms):
         alpha = tf.where(tf.less(alpha, 1e9), alpha,
                          1e9*tf.ones_like(alpha))
 
+        llh = tf.reduce_mean(cls.llh(parameters={"alpha": alpha, "beta": beta},
+                                     data=data), axis=0)
+        llhOld = tf.reduce_mean(cls.llh(parameters={"alpha": alphaOld, "beta": betaOld},
+                                        data=data), axis=0)
+        alpha = tf.where(llh > llhOld,
+                         alpha,
+                         alphaOld)
+        beta = tf.where(llh > llhOld,
+                        beta,
+                        betaOld)
         w = (alpha + 1)/(beta + y)
         return({"alpha": alpha,
                 "beta": beta,
