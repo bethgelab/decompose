@@ -13,6 +13,7 @@ from decompose.distributions.lomax import Lomax
 from decompose.distributions.cenNnNormal import CenNnNormal
 from decompose.distributions.cenT import CenT
 from decompose.distributions.cenNnT import CenNnT
+from decompose.distributions.uniform import Uniform
 from decompose.distributions.nnUniform import NnUniform
 from decompose.distributions.cenDoubleLomax import CenDoubleLomax
 from decompose.distributions.cenLaplace import CenLaplace
@@ -25,7 +26,7 @@ tf.logging.set_verbosity(tf.logging.INFO)
 
 @pytest.fixture(params=[CenDoubleLomax, CenLaplace, CenNnNormal, CenNnT,
                         CenNormal, CenT, Exponential, Laplace, Lomax,
-                        NnUniform, Normal, T])
+                        Uniform, NnUniform, Normal, T])
 def PriorDistribution(request):
     """A fixture that provides a prior distribution at a time."""
     prior = request.param
