@@ -84,6 +84,10 @@ class LomaxAlgorithms(Algorithms):
                         beta,
                         betaOld)
         w = (alpha + 1)/(beta + y)
+        w = tf.where(tf.less(w, 1e9), w,
+                     1e9*tf.ones_like(w))
+        w = tf.where(tf.greater(w, 1e-9), w,
+                     1e-9*tf.ones_like(w))
         return({"alpha": alpha,
                 "beta": beta,
                 "tau": w})
@@ -93,4 +97,8 @@ class LomaxAlgorithms(Algorithms):
                    data: Tensor) -> Dict[str, Tensor]:
         alpha, beta = parameters["alpha"], parameters["beta"]
         tau = (alpha + 1)/(beta + data)
+        tau = tf.where(tf.less(tau, 1e9), tau,
+                       1e9*tf.ones_like(tau))
+        tau = tf.where(tf.greater(tau, 1e-9), tau,
+                       1e-9*tf.ones_like(tau))
         return({"tau": tau})
