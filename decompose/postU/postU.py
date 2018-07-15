@@ -1,6 +1,7 @@
 from typing import Tuple, List
 from tensorflow import Tensor
 import tensorflow as tf
+from copy import copy
 
 from decompose.distributions.distribution import Distribution
 from decompose.likelihoods.likelihood import Likelihood
@@ -26,18 +27,22 @@ class PostU(object):
         UfUpdated = tf.concat((Uf[:k], Ufk, Uf[k+1:]), 0)
         return(UfUpdated)
 
-    def update(self, U: Tensor, X: Tensor,
-               transform: bool) -> Tuple[Tensor, Tensor]:
+    def update(self, U: List[Tensor], X: Tensor,
+               transform: bool) -> Tuple[Tensor]:
         f, K = self.__f, self.__K
+        U = copy(U)  # copy the list since we change it below
 
+        # update hyper parameters
         if not transform:
             self.prior.update(data=tf.transpose(U[f]))
         else:
             self.prior.fitLatents(data=tf.transpose(U[f]))
 
+        # prepare update of the f-th factor
         prepVars = self.__likelihood.prepVars(f=f, U=U, X=X)
 
-        def cond(k, Uf):
+        # update the filters of the f-th factor
+        def cond(k, U):
             return(tf.less(k, K))
 
         def body(k, U):
@@ -45,14 +50,12 @@ class PostU(object):
             return(k+1, U)
 
         k = tf.constant(0)
-        loop_vars = [k, list(U)]
-
+        loop_vars = [k, U]
         _, U = tf.while_loop(cond, body, loop_vars)
         return(U[f])
 
     def updateK(self, k, prepVars, U):
         f = self.__f
-
         UfShape = U[f].get_shape()
 
         lhUfk = self.__likelihood.lhUfk(U[f], prepVars, f, k)
