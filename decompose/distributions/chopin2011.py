@@ -485,7 +485,7 @@ def rtnorm2(a=0., b=1., mu=np.array([0.]), sigma=np.array([1.]), size=1):
     return(r)
 
 
-def rtnormFlipped(a=0., b=1., mu=np.array([0.]), sigma=np.array([1.]), size=1):
+def rtnormFlipped(a=0., b=1., mu=np.array([0.]), sigma=np.array([1.])):
     A = (a-mu) / sigma
     B = (b-mu) / sigma
 
@@ -504,7 +504,7 @@ def rtnormFlipped(a=0., b=1., mu=np.array([0.]), sigma=np.array([1.]), size=1):
 
     return(r)
 
-def rtnorm(a=0., b=1., mu=np.array([0.]), sigma=np.array([1.]), size=1):
+def rtnorm(a=0., b=1., mu=np.array([0.]), sigma=np.array([1.]), nSamples=1):
     assertSigma0 = tf.Assert(tf.reduce_all(tf.greater(sigma, 0.)), [sigma], name='sigmaNotPositive')
     assertSigma1 = tf.Assert(tf.reduce_all(tf.is_finite(sigma)), [sigma], name='sigmaNotFinite')
     assertMu = tf.Assert(tf.reduce_all(tf.is_finite(mu)), [mu], name='muNotFinite')
@@ -524,6 +524,13 @@ def rtnorm(a=0., b=1., mu=np.array([0.]), sigma=np.array([1.]), size=1):
         mu = mu * ones
         sigma = sigma * ones
 
+        multiples = np.concatenate(([nSamples], np.ones_like(mu.get_shape().as_list())))
+        shape = np.concatenate(([nSamples], mu.get_shape().as_list()))
+        a = tf.reshape(tf.tile(a[None], multiples), (-1,))
+        b = tf.reshape(tf.tile(b[None], multiples), (-1,))
+        mu = tf.reshape(tf.tile(mu[None], multiples), (-1,))
+        sigma = tf.reshape(tf.tile(sigma[None], multiples), (-1,))
+
         # flip such that |a| < |b|
         flip = tf.greater(tf.abs(a), tf.abs(b))
         mbflipped = -tf.gather(b, tf.where(flip))[..., 0]
@@ -534,10 +541,11 @@ def rtnorm(a=0., b=1., mu=np.array([0.]), sigma=np.array([1.]), size=1):
         muFlipped = updateTensor(mu, flip, mmuFlipped)
 
         # sample
-        rFlipped = rtnormFlipped(aFlipped, bFlipped, mu=muFlipped, sigma=sigma, size=size)
+        rFlipped = rtnormFlipped(aFlipped, bFlipped, mu=muFlipped, sigma=sigma)
 
         # flip back
         r = tf.where(flip, -rFlipped, rFlipped)
+        r = tf.reshape(r, shape)
     return(r)
 
 # Tables

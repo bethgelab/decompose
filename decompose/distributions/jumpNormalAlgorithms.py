@@ -73,7 +73,7 @@ class JumpNormalAlgorithms(Algorithms):
         tau = tf.reshape(tau*ones, (-1,))
         nu = tf.reshape(nu*ones, (-1,))
         beta = tf.reshape(beta*ones, (-1,))
-        inf = tf.ones_like(mu)*tf.constant(np.inf, dtype=mu.dtype)
+        inf = tf.reshape(tf.ones_like(mu)*tf.constant(np.inf, dtype=mu.dtype), (-1,))
 
         # sample from which side of the distribution to sample from
         alpha = cls.alpha(parameters)
@@ -81,10 +81,18 @@ class JumpNormalAlgorithms(Algorithms):
         isRight = tf.greater(rUni, alpha)
 
         # sample from the left side
-        rl = rtnorm(a=-inf, b=nu, mu=mu+1./(tau*beta), sigma=1./tf.sqrt(tau))
+        rl = rtnorm(a=-inf,
+                    b=nu,
+                    mu=mu+1./(tau*beta),
+                    sigma=1./tf.sqrt(tau))
+        rl = tf.reshape(rl, (-1,))
 
         # sample from the right side
-        rr = rtnorm(a=nu, b=inf, mu=mu-1./(tau*beta), sigma=1./tf.sqrt(tau))
+        rr = rtnorm(a=nu,
+                    b=inf,
+                    mu=mu-1./(tau*beta),
+                    sigma=1./tf.sqrt(tau))
+        rr = tf.reshape(rr, (-1,))
 
         # pick the samples randomly
         r = tf.where(isRight, rr, rl)

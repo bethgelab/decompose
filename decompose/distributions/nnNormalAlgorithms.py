@@ -11,14 +11,11 @@ class NnNormalAlgorithms(Algorithms):
 
     @classmethod
     def sample(cls, parameters: Dict[str, Tensor], nSamples: Tensor) -> Tensor:
-        # TODO: sample nSample many samples
         mu, tau = parameters["mu"], parameters["tau"]
         sigma = tf.sqrt(1./tau)
         a = tf.zeros_like(mu)
         b = tf.ones_like(a)*np.inf
-
-        r = rtnorm(a=a, b=b, mu=mu, sigma=sigma)
-        r = r[None, ...]
+        r = rtnorm(a=a, b=b, mu=mu, sigma=sigma, nSamples=nSamples)
         return(r)
 
     @classmethod
