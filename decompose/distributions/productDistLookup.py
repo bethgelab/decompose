@@ -43,6 +43,12 @@ class ProductDict(object):
             from decompose.distributions.laplace import Laplace
             self.data[frozenset((Normal, Laplace))] = NormalLaplace()
 
+            # Normal times CenNnFullyElasticNet
+            from decompose.distributions.cenNnFullyElasticNetCond import CenNnFullyElasticNetCond
+            from decompose.distributions.normalCenNnFullyElasticNetCond import NormalCenNnFullyElasticNetCond
+            self.data[frozenset((Normal, CenNnFullyElasticNetCond))] = NormalCenNnFullyElasticNetCond()
+
+
         def lookup(self, d0, d1):
             from decompose.distributions.distribution import Distribution
             if not isinstance(d0, Distribution):
