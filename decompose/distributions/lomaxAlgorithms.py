@@ -42,11 +42,12 @@ class LomaxAlgorithms(Algorithms):
     @classmethod
     def fit(cls, parameters: Dict[str, Tensor],
             data: tf.Tensor) -> Dict[str, Tensor]:
-        alpha, beta = parameters["alpha"], parameters["beta"]
+        alphaOld, betaOld = parameters["alpha"], parameters["beta"]
 
         y = data
         tn = data.get_shape()[0].value
-        beta = beta
+        alpha = alphaOld
+        beta = betaOld
 
         for i in range(1):
             swidths = tf.constant(np.array([0., 1e-8, 1e-7, 1e-6, 1e-4, 1e-3,
@@ -61,8 +62,8 @@ class LomaxAlgorithms(Algorithms):
             maxWidths = tf.gather(swidths, argmax)
             beta = beta+maxWidths*normedDirection
 
-            beta = tf.where(tf.greater(beta, 1.), beta,
-                            1.*tf.ones_like(beta))
+            beta = tf.where(tf.greater(beta, 1e-9), beta,
+                            1e-9*tf.ones_like(beta))
             beta = tf.where(tf.less(beta, 1e9), beta,
                             1e9*tf.ones_like(beta))
 
@@ -72,7 +73,21 @@ class LomaxAlgorithms(Algorithms):
         alpha = tf.where(tf.less(alpha, 1e9), alpha,
                          1e9*tf.ones_like(alpha))
 
+        llh = tf.reduce_mean(cls.llh(parameters={"alpha": alpha, "beta": beta},
+                                     data=data), axis=0)
+        llhOld = tf.reduce_mean(cls.llh(parameters={"alpha": alphaOld, "beta": betaOld},
+                                        data=data), axis=0)
+        alpha = tf.where(llh > llhOld,
+                         alpha,
+                         alphaOld)
+        beta = tf.where(llh > llhOld,
+                        beta,
+                        betaOld)
         w = (alpha + 1)/(beta + y)
+        w = tf.where(tf.less(w, 1e9), w,
+                     1e9*tf.ones_like(w))
+        w = tf.where(tf.greater(w, 1e-9), w,
+                     1e-9*tf.ones_like(w))
         return({"alpha": alpha,
                 "beta": beta,
                 "tau": w})
@@ -82,4 +97,8 @@ class LomaxAlgorithms(Algorithms):
                    data: Tensor) -> Dict[str, Tensor]:
         alpha, beta = parameters["alpha"], parameters["beta"]
         tau = (alpha + 1)/(beta + data)
+        tau = tf.where(tf.less(tau, 1e9), tau,
+                       1e9*tf.ones_like(tau))
+        tau = tf.where(tf.greater(tau, 1e-9), tau,
+                       1e-9*tf.ones_like(tau))
         return({"tau": tau})

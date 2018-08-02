@@ -11,6 +11,8 @@ from decompose.distributions.distribution import Distribution
 from decompose.distributions.uniform import Uniform
 from decompose.distributions.nnUniform import NnUniform
 from decompose.likelihoods.likelihood import Likelihood
+from decompose.likelihoods.specificNormal2dLikelihood import SpecificNormal2dLikelihood
+from decompose.likelihoods.allSpecificNormal2dLikelihood import AllSpecificNormal2dLikelihood
 from decompose.likelihoods.normal2dLikelihood import Normal2dLikelihood
 from decompose.likelihoods.normalNdLikelihood import NormalNdLikelihood
 from decompose.likelihoods.cvNormal2dLikelihood import CVNormal2dLikelihood
@@ -18,9 +20,21 @@ from decompose.likelihoods.cvNormalNdLikelihood import CVNormalNdLikelihood
 from decompose.postU.postU import PostU
 from decompose.stopCriterions.llhImprovementThreshold import LlhImprovementThreshold
 from decompose.stopCriterions.llhStall import LlhStall
+from decompose.cv.cv import CV
 
 
 EstimatorSpec = tf.estimator.EstimatorSpec
+
+
+class NoiseUniformity(Enum):
+    HOMOGENEOUS = 0
+    HETEROGENEOUS = 1
+    LAST_FACTOR_HETEROGENOUS = 2
+
+
+HOMOGENEOUS = NoiseUniformity.HOMOGENEOUS
+HETEROGENEOUS = NoiseUniformity.HETEROGENEOUS
+LAST_FACTOR_HETEROGENOUS = NoiseUniformity.LAST_FACTOR_HETEROGENOUS
 
 
 class parameterProperty(object):
@@ -100,13 +114,13 @@ class TensorFactorisation(object):
                  dtype: tf.DType,
                  stopCriterion,
                  phase: Phase,
-                 doRescale: bool = True,
+                 noiseUniformity: NoiseUniformity,
                  transform: bool = False) -> None:
 
         # setup the model
         self.dtype = dtype
-        self.__doRescale = doRescale
         self.__transform = transform
+        self.__noiseUniformity = noiseUniformity
         self.likelihood = likelihood
         self.stopCriterion = stopCriterion
         self.postU = []  # type: List[PostU]
@@ -142,7 +156,7 @@ class TensorFactorisation(object):
                dtype: tf.DType,
                phase: Phase,
                stopCriterion,
-               doRescale: bool = True,
+               noiseUniformity: NoiseUniformity = HOMOGENEOUS,
                transform: bool = False) -> "TensorFactorisation":
 
         # initialize U
@@ -153,7 +167,11 @@ class TensorFactorisation(object):
         F = len(M)
         U = []
         for f in range(F):
-            U.append(normal.sample(sample_shape=(K, M[f])))
+            if priorU[f].nonNegative:
+                UfInit = tf.abs(normal.sample(sample_shape=(K, M[f])))
+            else:
+                UfInit = normal.sample(sample_shape=(K, M[f]))
+            U.append(UfInit)
 
         # instantiate
         tefa = TensorFactorisation(U=U,
@@ -162,17 +180,17 @@ class TensorFactorisation(object):
                                    dtype=dtype,
                                    phase=phase,
                                    transform=transform,
-                                   doRescale=doRescale,
+                                   noiseUniformity=noiseUniformity,
                                    stopCriterion=stopCriterion)
         return(tefa)
 
     @property
-    def doRescale(self) -> bool:
-        return(self.__doRescale)
-
-    @property
     def transform(self) -> bool:
         return(self.__transform)
+
+    @property
+    def noiseUniformity(self) -> NoiseUniformity:
+        return(self.__noiseUniformity)
 
     @parameterProperty
     def U(self) -> Tuple[tf.Tensor, ...]:
@@ -197,56 +215,56 @@ class TensorFactorisation(object):
         return(self.U)
 
     def updateTrain(self, X: Tensor) -> None:
-            # store filterbanks in a list
-            U = list(self.U)  # type: List[Tensor]
+        # store filterbanks in a list
+        U = list(self.U)  # type: List[Tensor]
 
-            # update the parameters of the likelihood
-            self.likelihood.update(U, X)
+        # update the parameters of the likelihood
+        self.likelihood.update(U=U, X=X)
 
-            # calculate updates of the filterbanks
-            for f, postUf in enumerate(self.postU):
-                U[f] = postUf.update(U, X, False)
+        # update the filters in reversed order
+        for f, postUf in reversed(list(enumerate(self.postU))):
+            U = self.rescale(U=U, fNonUnit=f)
+            U[f] = postUf.update(U=U, X=X, transform=False)
 
-                if self.doRescale:
-                    U = self.rescale(U)
-
-            # update the filter banks
-            self.U = tuple(U)
+        # update the filter banks
+        self.U = tuple(U)
 
     def updateTransform(self, X: Tensor) -> None:
-            # store filterbanks in a list
-            U = list(self.U)  # type: List[Tensor]
+        # store filterbanks in a list
+        U = list(self.U)  # type: List[Tensor]
 
-            # calculate updates of the last filterbank
-            U[0] = self.postU[0].update(U, X, True)
+        # calculate updates of the first filterbank
+        U[0] = self.postU[0].update(U=U, X=X, transform=True)
 
-            # update the filter banks
-            self.U = tuple(U)
+        # update the filter banks
+        self.U = tuple(U)
 
-    def rescale(self, U: List[Tensor]) -> List[Tensor]:
-        """Same l2 norm across all factors."""
+    def rescale(self, U: List[Tensor], fNonUnit: int) -> List[Tensor]:
+        """Puts all variance in the factor `fUpdate`-th factor.
 
+        The method assumes that the norm of all filters is larger than 0."""
         F = len(U)
-        norm = tf.ones_like(U[0][..., 0])
+
+        # calculathe the scale for each source
+        scaleOfSources = tf.ones_like(U[0][..., 0])
+        for f in range(F):
+            scaleOfSources = scaleOfSources*tf.norm(U[f], axis=-1)
 
         for f in range(F):
-            norm = norm*tf.norm(U[f], axis=-1)
-        norm = (norm)**(1./F)
+            # determine rescaling constant depending on the factor number
+            Uf = U[f]
+            normUf = tf.norm(Uf, axis=-1)
+            if f == fNonUnit:
+                # put all variance in the filters of the fUpdate-th factor
+                rescaleConstant = scaleOfSources/normUf
+            else:
+                # normalize the filters all other factors
+                rescaleConstant = 1./normUf
 
-        for f in range(F):
-            Uf = U[f]
-            normUf = tf.norm(Uf, axis=-1)
-            norm = tf.where(tf.logical_or(tf.equal(norm/normUf, 0.),
-                                          tf.logical_not(tf.is_finite(norm/normUf))),
-                            tf.zeros_like(norm), norm)
-        for f in range(F):
-            Uf = U[f]
-            normUf = tf.norm(Uf, axis=-1)
-            Uf = Uf*(norm/normUf)[..., None]
-            Uf = tf.where(tf.logical_or(tf.equal(norm/normUf, 0.),
-                                        tf.logical_not(tf.is_finite(norm/normUf))),
-                          U[f], Uf)
+            # rescaled filters
+            Uf = Uf*rescaleConstant[..., None]
             U[f] = Uf
+
         return(U)
 
     def __setEm(self) -> None:
@@ -278,11 +296,35 @@ class TensorFactorisation(object):
         llh = self.likelihood.llh(self.U, X)
 
         # log likelihood of the factors
+        U = list(self.U)
         for f, postUf in enumerate(self.postU):
-            llhUf = tf.reduce_sum(postUf.prior.llh(tf.transpose(self.U[f])))
+            U = self.rescale(U=U, fNonUnit=f)
+            UfT = tf.transpose(U[f])
+            llhUf = tf.reduce_sum(postUf.prior.llh(UfT))
             llh = llh + llhUf
         llh = tf.cast(llh, tf.float64)
         return(llh)
+
+    def llhIndividual(self, X: Tensor) -> Tensor:
+        """Log likelihood of the parameters given data `X`."""
+
+        # log likelihood of the noise
+        llhRes = self.likelihood.llh(self.U, X)
+        llh = llhRes
+
+        # log likelihood of the factors
+        llhU = []
+        llhUfk = []
+        U = list(self.U)
+        for f, postUf in enumerate(self.postU):
+            U = self.rescale(U=U, fNonUnit=f)
+            UfT = tf.transpose(U[f])
+            llhUfk.append(tf.reduce_sum(postUf.prior.llh(UfT), axis=0))
+            llhUf = tf.reduce_sum(postUf.prior.llh(UfT))
+            llh = llh + llhUf
+            llhU.append(llhUf)
+        llh = tf.cast(llh, tf.float64)
+        return(llh, llhRes, llhU, llhUfk)
 
     @staticmethod
     def type():
@@ -300,47 +342,97 @@ class TensorFactorisation(object):
     def __model(cls, data: Tensor, priorTypes: List[Distribution],
                 M: Tuple[int, ...],
                 K: int, stopCriterion, phase: Phase, dtype: tf.DType,
-                reuse=False, trainsetProb: float = 1.,
+                reuse=False,
                 isFullyObserved: bool = True,
-                doRescale: bool = True, transform: bool = False,
+                cv: CV = None,
+                transform: bool = False,
+                noiseUniformity: NoiseUniformity = HOMOGENEOUS,
                 suffix: str = "") -> "TensorFactorisation":
         varscope = "stopCriterion" + phase.name
         stopCriterion.init(ns=varscope)
         F = len(priorTypes)
-        with tf.variable_scope("", reuse=reuse):
-            if F == 2:
-                if trainsetProb == 1. and isFullyObserved:
-                    likelihood = Normal2dLikelihood(
-                        M=M, K=K, dtype=dtype)  # type: Likelihood
-                else:
-                    likelihood = CVNormal2dLikelihood(
-                        M=M, K=K, dtype=dtype, trainsetProb=trainsetProb)
+
+        # selecting the apropriate likelihood
+        useNormal2dLikelihood = (
+            F == 2
+            and cv is None
+            and isFullyObserved
+            and (noiseUniformity == HOMOGENEOUS
+                 or phase == Phase.INIT))
+        useAllSpecificNormal2dLikelihood = (
+            F == 2
+            and cv is None
+            and isFullyObserved
+            and noiseUniformity == HETEROGENEOUS
+            and phase != Phase.INIT)
+        useSpecificNormal2dLikelihood = (
+            F == 2
+            and cv is None
+            and isFullyObserved
+            and noiseUniformity == LAST_FACTOR_HETEROGENOUS
+            and phase != Phase.INIT)
+        useCVNormal2dLikelihood = (
+            F == 2
+            and (cv is not None
+                 or not isFullyObserved)
+            and noiseUniformity == HOMOGENEOUS)
+        useNormalNdLikelihood = (
+            F > 2
+            and cv is None
+            and isFullyObserved
+            and noiseUniformity == HOMOGENEOUS)
+        useCVNormalNdLikelihood = (
+            F > 2
+            and (cv is not None
+                 or not isFullyObserved)
+            and noiseUniformity == HOMOGENEOUS)
+
+        # instantiate the likelihood
+        with tf.variable_scope(f"{suffix}", reuse=reuse):
+            if useNormal2dLikelihood:
+                likelihood = Normal2dLikelihood(
+                    M=M, K=K, dtype=dtype)  # type: Likelihood
+            elif useAllSpecificNormal2dLikelihood:
+                likelihood = AllSpecificNormal2dLikelihood(
+                    M=M, K=K, dtype=dtype)
+            elif useSpecificNormal2dLikelihood:
+                likelihood = SpecificNormal2dLikelihood(
+                    M=M, K=K, dtype=dtype)
+            elif useCVNormal2dLikelihood:
+                likelihood = CVNormal2dLikelihood(
+                    M=M, K=K, dtype=dtype, cv=cv)
+            elif useNormalNdLikelihood:
+                likelihood = NormalNdLikelihood(
+                    M=M, K=K, dtype=dtype)
+            elif useCVNormalNdLikelihood:
+                likelihood = CVNormalNdLikelihood(
+                    M=M, K=K, dtype=dtype, cv=cv)
             else:
-                if trainsetProb == 1. and isFullyObserved:
-                    likelihood = NormalNdLikelihood(
-                        M=M, K=K, dtype=dtype)
-                else:
-                    likelihood = CVNormalNdLikelihood(
-                        M=M, K=K, dtype=dtype, trainsetProb=trainsetProb)
+                raise NotImplementedError()
             likelihood.init(data)
+
+            # instantiate the priors
             priors = []
             for f, priorType in enumerate(priorTypes):
                 prior = priorType.random(shape=(K,), latentShape=(M[f],),
                                          name=f"prior{suffix}{f}", dtype=dtype)
                 priors.append(prior)
+
+        # instantiate the model
         tefa = cls.random(priorU=priors, likelihood=likelihood, M=M, K=K,
                           phase=phase, stopCriterion=stopCriterion,
-                          doRescale=doRescale, dtype=dtype,
+                          dtype=dtype, noiseUniformity=noiseUniformity,
                           transform=transform)
         return(tefa)
 
     @classmethod
     def __estimatorSpec(cls, mode, features, device: str,
-                        trainsetProb: float,
                         isFullyObserved: bool,
                         priors: List[Distribution],
                         K: int, stopCriterionInit, stopCriterionEM,
-                        stopCriterionBCD, doRescale: bool,
+                        stopCriterionBCD,
+                        cv: CV, path: str,
+                        noiseUniformity: NoiseUniformity,
                         transform: bool, dtype: tf.DType) -> EstimatorSpec:
         # PREDICT and EVAL are not supported
         if mode != tf.estimator.ModeKeys.TRAIN:
@@ -382,33 +474,31 @@ class TensorFactorisation(object):
                 else:
                     initPriors.append(Uniform())
             tefaInit = cls.__model(data=data, priorTypes=initPriors, K=K, M=M,
-                                   trainsetProb=trainsetProb,
                                    isFullyObserved=isFullyObserved,
                                    stopCriterion=stopCriterionInit,
                                    dtype=dtype, reuse=False,
-                                   transform=transform,
-                                   doRescale=doRescale, phase=Phase.INIT,
+                                   transform=transform, cv=cv,
+                                   phase=Phase.INIT,
+                                   noiseUniformity=noiseUniformity,
                                    suffix="init")
 
             # EM model
             tefaEM = cls.__model(data=data, priorTypes=priors, K=K, M=M,
-                                 trainsetProb=trainsetProb,
                                  isFullyObserved=isFullyObserved,
                                  stopCriterion=stopCriterionEM,
                                  dtype=dtype, phase=Phase.EM,
-                                 transform=transform,
-                                 reuse=tf.AUTO_REUSE,
-                                 doRescale=doRescale)
+                                 transform=transform, cv=cv,
+                                 noiseUniformity=noiseUniformity,
+                                 reuse=tf.AUTO_REUSE)
 
             # BCD model
             tefaBCD = cls.__model(data=data, priorTypes=priors, K=K, M=M,
-                                  trainsetProb=trainsetProb,
                                   isFullyObserved=isFullyObserved,
                                   stopCriterion=stopCriterionBCD,
                                   dtype=dtype, phase=Phase.BCD,
-                                  transform=transform,
-                                  reuse=tf.AUTO_REUSE,
-                                  doRescale=doRescale)
+                                  transform=transform, cv=cv,
+                                  noiseUniformity=noiseUniformity,
+                                  reuse=tf.AUTO_REUSE)
 
             # replace nan with zeros
             data = tf.where(tf.is_nan(data), tf.zeros_like(data), data)
@@ -448,27 +538,48 @@ class TensorFactorisation(object):
                 step = tf.train.get_or_create_global_step()
                 trainOp = tf.assign(step, step + 1)
 
-        return EstimatorSpec(mode, loss=loss, train_op=trainOp)
+            # log summaries
+            tf.summary.scalar("loss", loss)
+            llh = tf.cond(tf.logical_not(stopVarInit),
+                          lambda: tefaInit.llhIndividual(X=data),
+                          lambda: tf.cond(tf.logical_not(stopVarEm),
+                                          lambda: tefaEM.llhIndividual(X=data),
+                                          lambda: tefaBCD.llhIndividual(X=data)))
+            llh, llhRes, llhU, llhUfk = llh
+            tf.summary.scalar("llh", llh)
+            tf.summary.scalar("llhResiduals", llhRes)
+            for f, (llhUf, llhUfk) in enumerate(zip(llhU, llhUfk)):
+                tf.summary.scalar(f"llhU{f}", llhUf)
+
+            SAVE_EVERY_N_STEPS = 1  # TODO: make configurable
+            summary_hook = tf.train.SummarySaverHook(
+                SAVE_EVERY_N_STEPS,
+                output_dir=path,
+                summary_op=tf.summary.merge_all())
+
+        return EstimatorSpec(mode, loss=loss, train_op=trainOp,
+                             training_hooks=[summary_hook])
 
     @classmethod
     def getEstimator(cls, priors: Tuple[Distribution, ...], K: int,
-                     dtype: tf.DType = tf.float32, trainsetProb: float = 1.,
+                     dtype: tf.DType = tf.float32,
                      isFullyObserved: bool = True,
+                     noiseUniformity: NoiseUniformity = HOMOGENEOUS,
                      stopCriterionInit=LlhStall(10),
                      stopCriterionEM=LlhStall(100),
                      stopCriterionBCD=LlhImprovementThreshold(1e-2),
                      path: str = "/tmp", device: str = "/cpu:0",
-                     doRescale: bool = True):
+                     cv: CV = None):
 
         def model_fn(features, labels, mode):
             es = cls.__estimatorSpec(mode=mode, features=features,
-                                     trainsetProb=trainsetProb,
                                      isFullyObserved=isFullyObserved,
                                      device=device, priors=priors,
+                                     noiseUniformity=noiseUniformity,
                                      stopCriterionInit=stopCriterionInit,
                                      stopCriterionEM=stopCriterionEM,
                                      stopCriterionBCD=stopCriterionBCD,
-                                     doRescale=doRescale, K=K,
+                                     cv=cv, path=path, K=K,
                                      transform=False, dtype=dtype)
             return(es)
 
@@ -479,11 +590,11 @@ class TensorFactorisation(object):
     @classmethod
     def getTransformEstimator(cls, priors: Tuple[Distribution, ...], K: int,
                               chptFile: str, dtype: tf.DType = tf.float32,
+                              noiseUniformity: NoiseUniformity = HOMOGENEOUS,
                               stopCriterionInit=LlhStall(10),
                               stopCriterionEM=LlhStall(100),
                               stopCriterionBCD=LlhImprovementThreshold(1e-2),
-                              path: str = "/tmp", device: str = "/cpu:0",
-                              doRescale: bool = True):
+                              path: str = "/tmp", device: str = "/cpu:0"):
         # configuring warm start settings
         reader = pywrap_tensorflow.NewCheckpointReader(chptFile)
         varList = [v for v in reader.get_variable_to_shape_map().keys()
@@ -499,13 +610,13 @@ class TensorFactorisation(object):
 
         def model_fn(features, labels, mode):
             es = cls.__estimatorSpec(mode=mode, features=features,
-                                     trainsetProb=1.,
                                      isFullyObserved=True,
                                      device=device, priors=priors,
+                                     noiseUniformity=noiseUniformity,
                                      stopCriterionInit=stopCriterionInit,
                                      stopCriterionEM=stopCriterionEM,
                                      stopCriterionBCD=stopCriterionBCD,
-                                     doRescale=doRescale, K=K,
+                                     K=K, path=path, cv=None,
                                      transform=True, dtype=dtype)
             return(es)
 

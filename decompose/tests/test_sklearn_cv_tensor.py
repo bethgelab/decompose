@@ -1,10 +1,10 @@
 import pytest
 import numpy as np
 import tensorflow as tf
-from tensorflow.python import pywrap_tensorflow
 from decompose.distributions.cenNormal import CenNormal
 from decompose.sklearn import DECOMPOSE
 from decompose.data.lowRank import LowRank
+from decompose.cv.cv import Block
 
 
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -32,7 +32,7 @@ def test_sklearn_cv(tmpdir):
     priors, K, dtype = [CenNormal(), CenNormal(), CenNormal()], K, np.float32
     model = DECOMPOSE(modelDirectory, priors=priors, n_components=K,
                       isFullyObserved=False,
-                      trainsetProb=0.8, dtype=dtype)
+                      cv=Block(nFolds=(2, 3, 3), foldNumber=3), dtype=dtype)
 
     # mark 20% of the elments as unobserved
     data = lrData.training.copy()

@@ -1,22 +1,20 @@
 from typing import Tuple, List
-import numpy as np
 from tensorflow import Tensor
 import tensorflow as tf
+from copy import copy
 
 from decompose.distributions.distribution import Distribution
-from decompose.distributions.distribution import DrawType
 from decompose.likelihoods.likelihood import Likelihood
 
 
 class PostU(object):
 
     def __init__(self, likelihood: Likelihood, prior: Distribution,
-                 f: int, normalize: bool = False) -> None:
+                 f: int) -> None:
         self.__likelihood = likelihood
         self.__prior = prior
         self.__f = f
         self.__K = likelihood.K
-        self.__normalize = normalize
 
     def f(self) -> int:
         return(self.__f)
@@ -29,18 +27,22 @@ class PostU(object):
         UfUpdated = tf.concat((Uf[:k], Ufk, Uf[k+1:]), 0)
         return(UfUpdated)
 
-    def update(self, U: Tensor, X: Tensor,
-               transform: bool) -> Tuple[Tensor, Tensor]:
+    def update(self, U: List[Tensor], X: Tensor,
+               transform: bool) -> Tuple[Tensor]:
         f, K = self.__f, self.__K
+        U = copy(U)  # copy the list since we change it below
 
+        # update hyper parameters
         if not transform:
             self.prior.update(data=tf.transpose(U[f]))
         else:
             self.prior.fitLatents(data=tf.transpose(U[f]))
 
-        prepVars = self.__likelihood.lhU[f].prepVars(U, X)
+        # prepare update of the f-th factor
+        prepVars = self.__likelihood.prepVars(f=f, U=U, X=X)
 
-        def cond(k, Uf):
+        # update the filters of the f-th factor
+        def cond(k, U):
             return(tf.less(k, K))
 
         def body(k, U):
@@ -48,24 +50,26 @@ class PostU(object):
             return(k+1, U)
 
         k = tf.constant(0)
-        loop_vars = [k, list(U)]
-
+        loop_vars = [k, U]
         _, U = tf.while_loop(cond, body, loop_vars)
         return(U[f])
 
     def updateK(self, k, prepVars, U):
         f = self.__f
-
         UfShape = U[f].get_shape()
 
-        lhUfk = self.__likelihood.lhU[f].lhUfk(U, prepVars, k)
+        lhUfk = self.__likelihood.lhUfk(U[f], prepVars, f, k)
         postfk = lhUfk*self.prior[k].cond()
         Ufk = postfk.draw()
         Ufk = tf.expand_dims(Ufk, 0)
 
-        allZero = tf.reduce_all(tf.equal(Ufk, 0.))
-        isFinite = tf.reduce_all(tf.is_finite(Ufk))
-        isValid = tf.logical_and(isFinite, tf.logical_not(allZero))
+        normUfk = tf.norm(Ufk)
+        notNanNorm = tf.logical_not(tf.is_nan(normUfk))
+        finiteNorm = tf.is_finite(normUfk)
+        positiveNorm = normUfk > 0.
+        isValid = tf.logical_and(notNanNorm,
+                                 tf.logical_and(finiteNorm,
+                                                positiveNorm))
         Uf = tf.cond(isValid, lambda: self.updateUf(U[f], Ufk, k),
                      lambda: U[f])
 

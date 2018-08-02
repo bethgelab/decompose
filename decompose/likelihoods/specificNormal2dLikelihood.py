@@ -2,15 +2,14 @@ import numpy as np
 from typing import Tuple, List
 import tensorflow as tf
 from tensorflow import Tensor
-import string
 
+from decompose.distributions.distribution import Properties
 from decompose.distributions.distribution import DrawType, UpdateType
 from decompose.distributions.cenNormal import CenNormal
 from decompose.likelihoods.likelihood import Likelihood
-from decompose.distributions.distribution import Properties
 
 
-class NormalNdLikelihood(Likelihood):
+class SpecificNormal2dLikelihood(Likelihood):
 
     def __init__(self, M: Tuple[int, ...], K: int=1, tau: float = 1./1e10,
                  drawType: DrawType = DrawType.SAMPLE,
@@ -21,14 +20,15 @@ class NormalNdLikelihood(Likelihood):
         self.__dtype = dtype
         self.__properties = Properties(name='likelihood',
                                        drawType=drawType,
+                                       dtype=dtype,
                                        updateType=updateType,
                                        persistent=True)
 
     def init(self, data: Tensor) -> None:
         tau = self.__tauInit
-        dtype = self.__dtype
         properties = self.__properties
-        noiseDistribution = CenNormal(tau=tf.constant([tau], dtype=dtype),
+        tau = tf.ones_like(data[0])*tau  # TODO is using ones really useful
+        noiseDistribution = CenNormal(tau=tau,
                                       properties=properties)
         self.__noiseDistribution = noiseDistribution
 
@@ -37,10 +37,9 @@ class NormalNdLikelihood(Likelihood):
         return(self.__noiseDistribution)
 
     def residuals(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
-        F = len(U)
-        axisIds = string.ascii_lowercase[:F]
-        subscripts = f'k{",k".join(axisIds)}->{axisIds}'
-        Xhat = tf.einsum(subscripts, *U)
+        assert(len(U) == 2)
+        U0, U1 = U
+        Xhat = tf.matmul(tf.transpose(U0), U1)
         residuals = X-Xhat
         return(residuals)
 
@@ -56,26 +55,21 @@ class NormalNdLikelihood(Likelihood):
     def update(self, U: Tuple[Tensor, ...], X: Tensor) -> None:
         if self.noiseDistribution.updateType == UpdateType.ALL:
             residuals = self.residuals(U, X)
-            flattenedResiduals = tf.reshape(residuals, (-1,))[..., None]
-            self.noiseDistribution.update(flattenedResiduals)
-
-    def outterTensorProduct(self, Us):
-        F = len(Us)
-        axisIds = string.ascii_lowercase[:F]
-        subscripts = f'k{",k".join(axisIds)}->{axisIds}k'
-        Xhat = tf.einsum(subscripts, *Us)
-        return(Xhat)
+            self.noiseDistribution.update(residuals)
 
     def prepVars(self, f: int, U: List[Tensor],
                  X: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
-        F = self.F
-        Umf = [U[g] for g in range(F) if g != f]
-        UmfOutter = self.outterTensorProduct(Umf)
+        if f == 0:
+            U1 = U[1]
+            alpha1 = self.noiseDistribution.tau
+            alpha = tf.ones_like(X[:, 0])
+        elif f == 1:
+            U1 = U[0]
+            alpha1 = tf.ones_like(X[:, 0])
+            alpha = self.noiseDistribution.tau
+            X = tf.transpose(X)
 
-        rangeFm1 = list(range(F-1))
-        A = tf.tensordot(X, UmfOutter,
-                         axes=([g for g in range(F) if g != f], rangeFm1))
-        B = tf.tensordot(UmfOutter, UmfOutter,
-                         axes=(rangeFm1, rangeFm1))
-        alpha = self.noiseDistribution.tau
+        U1T = tf.transpose(U1)
+        A = tf.matmul(X, U1T*alpha1[..., None])
+        B = tf.matmul(U1*alpha1, U1T)
         return(A, B, alpha)

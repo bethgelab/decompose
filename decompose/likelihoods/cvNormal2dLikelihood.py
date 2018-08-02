@@ -1,40 +1,30 @@
 import numpy as np
-from typing import Tuple, List, Dict, Any
+from typing import Tuple, List
 import tensorflow as tf
 from tensorflow import Tensor
 
-from decompose.distributions.distribution import Distribution
 from decompose.distributions.distribution import DrawType, UpdateType
 from decompose.distributions.cenNormal import CenNormal
-from decompose.distributions.normal import Normal
-from decompose.likelihoods.likelihood import NormalLikelihood, LhU
+from decompose.likelihoods.likelihood import Likelihood
 from decompose.distributions.distribution import Properties
+from decompose.cv.cv import CV
 
 
-class CVNormal2dLikelihood(NormalLikelihood):
+class CVNormal2dLikelihood(Likelihood):
 
     def __init__(self, M: Tuple[int, ...], K: int=1, tau: float = 1./1e10,
-                 trainsetProb: float = 0.8,
+                 cv: CV = None,
                  drawType: DrawType = DrawType.SAMPLE,
                  updateType: UpdateType = UpdateType.ALL,
                  dtype=tf.float32) -> None:
-        NormalLikelihood.__init__(self, M, K)
-        self.__trainsetProb = trainsetProb
+        Likelihood.__init__(self, M, K)
+        self.__cv = cv
         self.__tauInit = tau
         self.__dtype = dtype
         self.__properties = Properties(name='likelihood',
                                        drawType=drawType,
                                        updateType=updateType,
                                        persistent=True)
-
-        self.__lhU = []  # type: List[LhU]
-        for f in range(self.F):
-            lhUf = Normal2dLikelihoodLhU(f, self)
-            self.__lhU.append(lhUf)
-
-    @staticmethod
-    def type():
-        return(CVNormal2dLikelihood)
 
     def init(self, data: Tensor) -> None:
         tau = self.__tauInit
@@ -43,11 +33,8 @@ class CVNormal2dLikelihood(NormalLikelihood):
         noiseDistribution = CenNormal(tau=tf.constant([tau], dtype=dtype),
                                       properties=properties)
         self.__noiseDistribution = noiseDistribution
-
         observedMask = tf.logical_not(tf.is_nan(data))
-        trainsetProb = self.__trainsetProb
-        r = tf.distributions.Uniform().sample(sample_shape=self.M)
-        trainMask = tf.less(r, trainsetProb)
+        trainMask = tf.logical_not(self.cv.mask(X=data))
         trainMask = tf.get_variable("trainMask",
                                     dtype=trainMask.dtype,
                                     initializer=trainMask)
@@ -57,6 +44,10 @@ class CVNormal2dLikelihood(NormalLikelihood):
         self.__observedMask = observedMask
         self.__trainMask = trainMask
         self.__testMask = testMask
+
+    @property
+    def cv(self) -> CV:
+        return(self.__cv)
 
     @property
     def observedMask(self) -> Tensor:
@@ -98,9 +89,8 @@ class CVNormal2dLikelihood(NormalLikelihood):
         return(trainResiduals)
 
     def llh(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
-        testsetProb = 1. - self.__trainsetProb
         r = self.testResiduals(U, X)
-        llh = tf.reduce_sum(self.noiseDistribution.llh(r))/testsetProb
+        llh = tf.reduce_sum(self.noiseDistribution.llh(r))
         return(llh)
 
     def loss(self, U: Tuple[Tensor, ...], X: Tensor) -> Tensor:
@@ -113,69 +103,18 @@ class CVNormal2dLikelihood(NormalLikelihood):
             flattenedResiduals = residuals[..., None]
             self.noiseDistribution.update(flattenedResiduals)
 
-    @property
-    def alpha(self) -> Tensor:
-        return(self.noiseDistribution.tau[0])
+    def prepVars(self, f: int, U: List[Tensor],
+                 X: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+        trainMask = tf.cast(self.__trainMask, dtype=U[0].dtype)
+        if f == 0:
+            U1 = U[1]
+        else:
+            U1 = U[0]
+            X = tf.transpose(X)
+            trainMask = tf.transpose(trainMask)
+        U1T = tf.transpose(U1)
 
-    @property
-    def lhU(self) -> List["LhU"]:
-        return(self.__lhU)
-
-
-class Normal2dLikelihoodLhU(LhU):
-
-    def __init__(self, f: int,
-                 likelihood: NormalLikelihood) -> None:
-        self.__f = f
-        self.__g = (self.__f-1)**2
-        self.__likelihood = likelihood
-
-    def prepVars(self, U: List[Tensor], X: Tensor) -> Tuple[Tensor, Tensor]:
-        U1 = self.__likelihood.lhU[self.__g].getUfRep(U[self.__g])
-        U1T = tf.transpose(U1, [1, 0])
-        X = tf.transpose(X, [self.__f, self.__g])
-        trainMask = tf.cast(self.__likelihood.trainMask, dtype=U[0].dtype)
-        mask = tf.transpose(trainMask, [self.__f, self.__g])
-
-        A = tf.matmul(X*mask, U1T)
-        B = tf.einsum("mn,in,jn->mij", mask, U1, U1)
-        return(A, B)
-
-    def lhUfk(self, U: List[Tensor],
-              prepVars: Tuple[Tensor, ...], k: Tensor) -> Distribution:
-        U0 = U[self.__f]
-        K, M = U0.get_shape().as_list()
-        alpha = self.__likelihood.alpha
-
-        A, B = prepVars
-        Xv = tf.slice(A, [0, k], [M, 1])[..., 0]
-        Bk = tf.slice(B, [0, 0, k], [M, K, 1])[..., 0]
-        Bkk = tf.slice(B, [0, k, k], [M, 1, 1])[:, 0, 0]
-        Uk = tf.slice(U0, [k, 0], [1, M])[0]
-        UVTv = tf.reduce_sum(tf.transpose(U0)*Bk, axis=1)
-        uvTv = Uk*Bkk
-
-        mlMeanPrecisionDivAlpha = Xv - UVTv + uvTv
-        mlPrecisionDivAlpha = Bkk
-        mlMean = mlMeanPrecisionDivAlpha/mlPrecisionDivAlpha
-        mlPrecision = tf.multiply(mlPrecisionDivAlpha, alpha)
-
-        noiseDistribution = self.__likelihood.noiseDistribution
-        properties = Properties(name="mlU{}".format(self.__f),
-                                drawType=noiseDistribution.drawType,
-                                updateType=noiseDistribution.updateType,
-                                persistent=False)
-
-        lhUfk = Normal(mu=mlMean,
-                       tau=mlPrecision,
-                       properties=properties)
-        return(lhUfk)
-
-    def newUfk(self, Ufk: Tensor, k: Tensor) -> None:
-        pass
-
-    def rescaleUfk(self, c: Tensor) -> None:
-        pass
-
-    def getUfRep(self, Uf: Tensor) -> Tensor:
-        return(Uf)
+        A = tf.matmul(X*trainMask, U1T)
+        B = tf.einsum("mn,in,jn->mij", trainMask, U1, U1)
+        alpha = self.noiseDistribution.tau
+        return(A, B, alpha)

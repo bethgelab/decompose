@@ -13,9 +13,12 @@ from decompose.distributions.lomax import Lomax
 from decompose.distributions.cenNnNormal import CenNnNormal
 from decompose.distributions.cenT import CenT
 from decompose.distributions.cenNnT import CenNnT
+from decompose.distributions.uniform import Uniform
 from decompose.distributions.nnUniform import NnUniform
+from decompose.distributions.nnNormal import NnNormal
 from decompose.distributions.cenDoubleLomax import CenDoubleLomax
 from decompose.distributions.cenLaplace import CenLaplace
+from decompose.distributions.cenNnFullyElasticNet import CenNnFullyElasticNet
 from decompose.data.random import Random
 from decompose.stopCriterions.nIterations import NIterations
 
@@ -23,9 +26,11 @@ from decompose.stopCriterions.nIterations import NIterations
 tf.logging.set_verbosity(tf.logging.INFO)
 
 
-@pytest.fixture(params=[CenDoubleLomax, CenLaplace, CenNnNormal, CenNnT,
-                        CenNormal, CenT, Exponential, Laplace, Lomax,
-                        NnUniform, Normal, T])
+@pytest.fixture(params=[Laplace, CenNnFullyElasticNet,
+                        NnNormal, CenDoubleLomax, CenLaplace,
+                        CenNnNormal, CenNnT, CenNormal, CenT,
+                        Exponential, Laplace, Lomax,
+                        Uniform, NnUniform, Normal, T])
 def PriorDistribution(request):
     """A fixture that provides a prior distribution at a time."""
     prior = request.param
@@ -57,8 +62,7 @@ def test_all_priors(tmpdir, PriorDistribution):
                                             stopCriterionBCD=NIterations(10),
                                             dtype=tf.as_dtype(dtype),
                                             path=modelDirectory,
-                                            device="/cpu:0",
-                                            doRescale=True)
+                                            device="/cpu:0")
 
     # create input_fna
     input_fn = randomData.input_fn

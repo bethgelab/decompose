@@ -5,12 +5,17 @@ import tensorflow as tf
 from tensorflow.python import pywrap_tensorflow
 
 from decompose.models.tensorFactorisation import TensorFactorisation
+from decompose.models.tensorFactorisation import NoiseUniformity
 from decompose.distributions.cenNormal import CenNormal
 from decompose.stopCriterions.stopCriterion import StopHook
 from decompose.stopCriterions.llhImprovementThreshold import LlhImprovementThreshold
 from decompose.stopCriterions.llhStall import LlhStall
 from decompose.stopCriterions.stopCriterion import StopCriterion
 from decompose.distributions.distribution import Distribution
+from decompose.cv.cv import CV
+
+
+HOMOGENEOUS = NoiseUniformity.HOMOGENEOUS
 
 
 class DECOMPOSE(object):
@@ -19,35 +24,35 @@ class DECOMPOSE(object):
     def __init__(self, modelDirectory: str,
                  priors: Tuple[Distribution, ...] = (CenNormal(), CenNormal()),
                  n_components: int = 3,
-                 trainsetProb: float = 1.,
                  isFullyObserved: bool = True,
                  dtype: type = np.float32,
                  maxIterations: int = 100000,
-                 doRescale: bool = True,
+                 cv: CV = None,
+                 noiseUniformity: NoiseUniformity = HOMOGENEOUS,
                  stopCriterionInit: StopCriterion = LlhStall(100),
                  stopCriterionEM: StopCriterion = LlhStall(100),
                  stopCriterionBCD: StopCriterion = LlhImprovementThreshold(.1),
                  device: str = "/cpu:0") -> None:
-        self.__trainsetProb = trainsetProb
         self.__isFullyObserved = isFullyObserved
         self.__maxIterations = maxIterations
         self.__n_components = n_components
         self.__priors = priors
         self.__dtype = dtype
+        self.__cv = cv
         self.__modelDirectory = modelDirectory
         self.__device = device
-        self.__doRescale = doRescale
+        self.__noiseUniformity = noiseUniformity
         self.__stopCriterionInit = stopCriterionInit
         self.__stopCriterionEM = stopCriterionEM
         self.__stopCriterionBCD = stopCriterionBCD
         tefa = TensorFactorisation.getEstimator(
             priors=priors,
             K=self.n_components,
-            trainsetProb=trainsetProb,
             isFullyObserved=isFullyObserved,
             dtype=tf.as_dtype(dtype),
             path=modelDirectory,
-            doRescale=doRescale,
+            noiseUniformity=noiseUniformity,
+            cv=cv,
             stopCriterionInit=stopCriterionInit,
             stopCriterionEM=stopCriterionEM,
             stopCriterionBCD=stopCriterionBCD,
@@ -55,8 +60,12 @@ class DECOMPOSE(object):
         self.__tefa = tefa
 
     @property
-    def doRescale(self) -> bool:
-        return(self.__doRescale)
+    def noiseUniformity(self) -> bool:
+        return(self.__noiseUniformity)
+
+    @property
+    def cv(self) -> CV:
+        return(self.__cv)
 
     @property
     def n_components(self) -> int:
@@ -129,7 +138,8 @@ class DECOMPOSE(object):
             self.__observedMask = np.logical_not(np.isnan(X))
         else:
             self.__observedMask = np.ones_like(X)
-        if self.__trainsetProb < 1.:
+
+        if self.cv is not None:
             trainMask = ckptReader.get_tensor("trainMask")
             self.__trainMask = np.logical_and(self.__observedMask,
                                               trainMask)
@@ -172,6 +182,7 @@ class DECOMPOSE(object):
             dtype=tf.as_dtype(self.__dtype),
             path=transformModelDirectory,
             chptFile=ckptFile,
+            noiseUniformity=self.noiseUniformity,
             stopCriterionInit=self.__stopCriterionInit,
             stopCriterionEM=self.__stopCriterionEM,
             stopCriterionBCD=self.__stopCriterionBCD)

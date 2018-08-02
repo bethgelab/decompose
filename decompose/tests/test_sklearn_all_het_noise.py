@@ -4,9 +4,11 @@ import tensorflow as tf
 from decompose.distributions.cenNormal import CenNormal
 from decompose.sklearn import DECOMPOSE
 from decompose.data.lowRank import LowRank
+from decompose.models.tensorFactorisation import NoiseUniformity
 
 
 tf.logging.set_verbosity(tf.logging.INFO)
+HETEROGENOUS = NoiseUniformity.HETEROGENEOUS
 
 
 @pytest.mark.system
@@ -30,7 +32,7 @@ def test_sklearn(tmpdir):
     # instantiate a model
     priors, K, dtype = [CenNormal(), CenNormal()], K, np.float32
     model = DECOMPOSE(modelDirectory, priors=priors, n_components=K,
-                      dtype=dtype)
+                      dtype=dtype, noiseUniformity=HETEROGENOUS)
 
     # train the model
     U0 = model.fit_transform(lrData.training)

@@ -23,8 +23,11 @@ class ExponentialAlgorithms(Algorithms):
     @classmethod
     def pdf(cls, parameters: Dict[str, Tensor], data: Tensor) -> Tensor:
         beta = parameters["beta"]
-        exp = tf.distributions.Exponential(rate=1./beta)
-        pdf = exp.prob(value=data)
+        # TODO: once tensorflow issue #20737 is resolved use the
+        # commented out code to calculate the pdf
+        # exp = tf.distributions.Exponential(rate=1./beta)
+        # pdf = exp.prob(value=data)
+        pdf = 1./beta*tf.exp(-data/beta)
         pdf = tf.where(tf.less(data, 0.), tf.zeros_like(pdf), pdf)
         return(pdf)
 
@@ -36,11 +39,14 @@ class ExponentialAlgorithms(Algorithms):
         return(updatedParameters)
 
     @classmethod
-    def llh(cls, parameters: Dict[str, Tensor], data: tf.Tensor) -> float:
+    def llh(cls, parameters: Dict[str, Tensor], data: tf.Tensor) -> Tensor:
         beta = parameters["beta"]
-        exp = tf.distributions.Exponential(rate=1./beta)
-        llh = exp.log_prob(value=data)
-        llh = tf.where(tf.less(data, 0.), -tf.ones_like(llh)*np.inf, llh)
+        # TODO: once tensorflow issue #20737 is resolved use the
+        # commented out code to calculate the llh
+        # exp = tf.distributions.Exponential(rate=1./beta)
+        # llh = exp.log_prob(value=data)
+        llh = -tf.log(beta) - data/beta
+        llh = tf.where(data < 0., -tf.ones_like(llh)*np.inf, llh)
         return(llh)
 
     @classmethod
